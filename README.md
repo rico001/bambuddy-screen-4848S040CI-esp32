@@ -108,6 +108,12 @@ Then fill in `include/secrets.h` with:
 - optional camera token
 - optional MQTT credentials
 
+The API key can be created directly in Bambuddy under **Settings -> API Keys**.
+
+<p>
+  <img src="docs/bambuddy-apikeys.png" alt="Bambuddy API Keys settings screen" width="100%">
+</p>
+
 Important: these values are only the **initial defaults for the first boot**. After that, the display stores its own settings in NVS.
 
 ### 4. Build the firmware
@@ -200,10 +206,7 @@ pio device monitor
 
 ## Tested With
 
-Tested with **Bambuddy v0.2.4.4**.
-Tested on a **Bambu Lab P1S**.
-
-As of **August 8, 2026**, this appears to be the latest stable Bambuddy release on GitHub. If you are on a newer release, small API or behavior differences may exist.
+Tested against a private **Bambuddy v1.2.5.2** instance on a **Bambu Lab P1S**.
 
 ## Project Status
 
