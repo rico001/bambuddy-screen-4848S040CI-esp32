@@ -50,16 +50,16 @@ static void fetch_page()
 {
     const int offset = current_page * BB_ARCHIVE_PAGE_SIZE;
 
-    BambuddyHttp session;
+    BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/archives/?printer_id=%d&limit=%d&offset=%d",
                                    bambuddy_printer_id(), FETCH_LIMIT, offset);
-    if (!session.begin(url)) return;
+    if (!session.begin(url, true)) return;
 
     HTTPClient &http = session.http();
 
     const int code = http.GET();
     if (code != 200) {
-        session.end();
+        session.end(false);
         Serial.printf("[Archiv] HTTP %d\n", code);
         last_error_ms = millis();
         return;
@@ -80,7 +80,7 @@ static void fetch_page()
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
 
     if (err) {
         Serial.printf("[Archiv] Antwort nicht lesbar: %s\n", err.c_str());
@@ -103,7 +103,7 @@ static void fetch_page()
         if (it.id == 0) continue;
 
         const char *name = obj["print_name"] | obj["filename"] | "Unbenannt";
-        strncpy(it.name, name, sizeof(it.name) - 1);
+        bambuddy_copy_field(it.name, sizeof(it.name), name);
         it.print_seconds = obj["print_time_seconds"] | 0;
         it.grams = obj["filament_used_grams"] | 0.0f;
         strncpy(it.filament, obj["filament_type"] | "", sizeof(it.filament) - 1);
@@ -127,13 +127,13 @@ static void fetch_page()
 
 static int send_code(const char *method, const char *url)
 {
-    BambuddyHttp session;
-    if (!session.begin(url)) return -1;
+    BambuddyHttp &session = bambuddy_http_shared();
+    if (!session.begin(url, true)) return -1;
 
     HTTPClient &http = session.http();
 
     const int code = http.sendRequest(method, (uint8_t *)nullptr, 0);
-    session.end();
+    session.end(false);
 
     if (code < 200 || code >= 300) {
         Serial.printf("[Archiv] %s %s -> HTTP %d\n", method, url, code);

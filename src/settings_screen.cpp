@@ -51,6 +51,14 @@ static constexpr int TZ_COUNT = 5;
 static constexpr int TZ_DEFAULT = 0; // Berlin
 static const char *tz_options = "Berlin\nLondon\nAthen\nUTC\nNew York";
 
+// Bildschirmabschaltung. "Aus" ist Standard: ein Wanddisplay, das von
+// selbst dunkel wird, ohne dass man es eingestellt hat, wirkt defekt.
+static const uint32_t screen_off_ms[] = {0, 30000, 60000, 300000, 600000};
+static constexpr int SCREEN_OFF_COUNT = 5;
+static constexpr int SCREEN_OFF_DEFAULT = 0;
+static const char *screen_off_options =
+    "Aus\n30 Sekunden\n1 Minute\n5 Minuten\n10 Minuten";
+
 // Zeit gilt als gueltig, wenn sie nach dem 15.11.2023 liegt —
 // vorher steht die Uhr noch auf dem Startwert des Chips.
 static constexpr time_t MIN_VALID_EPOCH = 1700000000;
@@ -73,6 +81,19 @@ static bool tls_verify = true;
 static int brightness = 100;
 static int poll_idx = POLL_DEFAULT;
 static int tz_idx = TZ_DEFAULT;
+
+// Vor dem Abschalten wird abgedunkelt: so sieht man es kommen und kann
+// rechtzeitig tippen, statt ins Dunkle zu greifen.
+static constexpr uint32_t DIM_LEAD_MS = 15000;
+static constexpr float DIM_BACKLIGHT = 0.15f;
+
+enum screen_level_t { SCREEN_ON, SCREEN_DIM, SCREEN_OFF };
+
+static int screen_off_idx = SCREEN_OFF_DEFAULT;
+static screen_level_t screen_level = SCREEN_ON;
+static lv_obj_t *sleep_catcher = nullptr;
+static lv_timer_t *sleep_timer = nullptr;
+static lv_obj_t *screen_off_dd;
 
 static bool ntp_requested = false;
 static uint32_t last_ntp_attempt_ms = 0;
@@ -114,7 +135,12 @@ static void load_settings()
     brightness = prefs.getInt("bright", 100);
     poll_idx = prefs.getInt("poll", POLL_DEFAULT);
     tz_idx = prefs.getInt("tz", TZ_DEFAULT);
+    screen_off_idx = prefs.getInt("scroff", SCREEN_OFF_DEFAULT);
     prefs.end();
+
+    if (screen_off_idx < 0 || screen_off_idx >= SCREEN_OFF_COUNT) {
+        screen_off_idx = SCREEN_OFF_DEFAULT;
+    }
 
     if (poll_idx < 0 || poll_idx >= POLL_COUNT) poll_idx = POLL_DEFAULT;
     if (tz_idx < 0 || tz_idx >= TZ_COUNT) tz_idx = TZ_DEFAULT;
@@ -129,6 +155,7 @@ static void save_settings()
     prefs.putInt("bright", brightness);
     prefs.putInt("poll", poll_idx);
     prefs.putInt("tz", tz_idx);
+    prefs.putInt("scroff", screen_off_idx);
     prefs.end();
 }
 
@@ -162,6 +189,90 @@ static float brightness_to_backlight(int value)
 static void apply_brightness()
 {
     smartdisplay_lcd_set_backlight(brightness_to_backlight(brightness));
+}
+
+// ============================================================
+// Bildschirmabschaltung
+// ============================================================
+
+static void wake_cb(lv_event_t *);
+
+// Im Schlaf legt sich eine unsichtbare Flaeche ueber alles. Sie verschluckt
+// die Weckberuehrung — ohne sie wuerde der erste Tipp auf den dunklen
+// Bildschirm blind auf dem darunterliegenden Screen landen, und das kann im
+// schlimmsten Fall einen Druck stoppen. Beim blossen Abdunkeln bleibt sie
+// weg: da ist noch alles lesbar, und Tippen soll normal wirken.
+static void set_catcher(bool active)
+{
+    if (active && !sleep_catcher) {
+        sleep_catcher = lv_obj_create(lv_layer_top());
+        lv_obj_set_size(sleep_catcher, SCREEN_W, SCREEN_H);
+        lv_obj_align(sleep_catcher, LV_ALIGN_TOP_LEFT, 0, 0);
+        lv_obj_set_style_bg_opa(sleep_catcher, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(sleep_catcher, 0, 0);
+        lv_obj_set_style_radius(sleep_catcher, 0, 0);
+        lv_obj_remove_flag(sleep_catcher, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(sleep_catcher, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_event_cb(sleep_catcher, wake_cb, LV_EVENT_PRESSED, nullptr);
+    }
+    if (!sleep_catcher) return;
+
+    if (active) {
+        lv_obj_remove_flag(sleep_catcher, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(sleep_catcher);
+    } else {
+        lv_obj_add_flag(sleep_catcher, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void set_screen_level(screen_level_t level)
+{
+    if (level == screen_level) return;
+    screen_level = level;
+
+    switch (level) {
+    case SCREEN_OFF:
+        set_catcher(true);
+        smartdisplay_lcd_set_backlight(0.0f);
+        break;
+    case SCREEN_DIM:
+        set_catcher(false);
+        smartdisplay_lcd_set_backlight(DIM_BACKLIGHT);
+        break;
+    case SCREEN_ON:
+    default:
+        set_catcher(false);
+        smartdisplay_lcd_set_backlight(brightness_to_backlight(brightness));
+        break;
+    }
+}
+
+static void wake_cb(lv_event_t *)
+{
+    set_screen_level(SCREEN_ON);
+}
+
+static void sleep_check_cb(lv_timer_t *)
+{
+    const uint32_t timeout = screen_off_ms[screen_off_idx];
+    if (timeout == 0) {
+        set_screen_level(SCREEN_ON); // Einstellung im Schlaf abgeschaltet
+        return;
+    }
+
+    // LVGL zaehlt die Zeit seit der letzten Eingabe selbst mit — dadurch
+    // zaehlt jede Beruehrung auf jedem Screen, ohne dass die Screens etwas
+    // davon wissen muessen.
+    const uint32_t idle = lv_display_get_inactive_time(nullptr);
+    const uint32_t dim_at = timeout > DIM_LEAD_MS ? timeout - DIM_LEAD_MS : timeout / 2;
+
+    if (idle >= timeout) {
+        set_screen_level(SCREEN_OFF);
+    } else if (idle >= dim_at) {
+        set_screen_level(SCREEN_DIM);
+    } else {
+        set_screen_level(SCREEN_ON);
+    }
 }
 
 static void apply_timezone()
@@ -505,8 +616,16 @@ static void time_tick_cb(lv_timer_t *)
     }
 }
 
-static void start_time_service()
+// Uhr und Bildschirmabschaltung laufen unabhaengig davon, ob der
+// Einstellungs-Screen jemals gebaut wurde — beide gehoeren zum Geraet,
+// nicht zu einer Kachel.
+static void start_background_services()
 {
+    if (!sleep_timer) {
+        sleep_timer = lv_timer_create(sleep_check_cb, 500, nullptr);
+        lv_timer_set_repeat_count(sleep_timer, -1);
+    }
+
     if (!time_timer) {
         time_timer = lv_timer_create(time_tick_cb, 1000, nullptr);
         lv_timer_set_repeat_count(time_timer, -1);
@@ -535,6 +654,7 @@ static void tls_switch_cb(lv_event_t *)
 static void brightness_cb(lv_event_t *)
 {
     brightness = lv_slider_get_value(brightness_slider);
+    screen_level = SCREEN_ON; // Regler bedienen heisst: Bildschirm ist wach
     apply_brightness();
     lv_label_set_text_fmt(brightness_value_lbl, "%d%%", 20 + brightness * 80 / 100);
     save_settings();
@@ -543,6 +663,13 @@ static void brightness_cb(lv_event_t *)
 static void poll_dd_cb(lv_event_t *)
 {
     poll_idx = lv_dropdown_get_selected(poll_dd);
+    save_settings();
+}
+
+static void screen_off_dd_cb(lv_event_t *)
+{
+    screen_off_idx = lv_dropdown_get_selected(screen_off_dd);
+    set_screen_level(SCREEN_ON);
     save_settings();
 }
 
@@ -587,9 +714,9 @@ void settings_apply_saved()
     apply_theme();
     apply_brightness();
     apply_timezone();
-    // Die Uhr gehoert zur globalen Statusleiste und darf deshalb nicht vom
-    // spaeter nur bei Bedarf erzeugten Einstellungs-Screen abhaengen.
-    start_time_service();
+    // Uhr und Bildschirmabschaltung gehoeren zum Geraet und duerfen nicht
+    // vom spaeter nur bei Bedarf erzeugten Einstellungs-Screen abhaengen.
+    start_background_services();
 }
 
 void settings_screen_create(lv_obj_t *parent)
@@ -678,6 +805,14 @@ void settings_screen_create(lv_obj_t *parent)
     if (dark_mode) lv_obj_add_state(dark_switch, LV_STATE_CHECKED);
     lv_obj_add_event_cb(dark_switch, dark_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    lv_obj_t *off_row = settings_add_row(LV_SYMBOL_POWER, "Bildschirm aus",
+                                         "Nach Untaetigkeit abschalten");
+    screen_off_dd = lv_dropdown_create(off_row);
+    lv_dropdown_set_options(screen_off_dd, screen_off_options);
+    lv_dropdown_set_selected(screen_off_dd, screen_off_idx);
+    lv_obj_set_width(screen_off_dd, 150);
+    lv_obj_add_event_cb(screen_off_dd, screen_off_dd_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
     brightness_slider = settings_add_slider_row(LV_SYMBOL_SETTINGS, "Helligkeit",
                                                 0, 100, brightness,
                                                 brightness_cb, &brightness_value_lbl);
@@ -712,6 +847,7 @@ void settings_screen_destroy()
     tls_switch = nullptr;
     poll_dd = nullptr;
     tz_dd = nullptr;
+    screen_off_dd = nullptr;
     brightness_slider = nullptr;
     brightness_value_lbl = nullptr;
     time_row_lbl = nullptr;
@@ -723,7 +859,6 @@ void settings_screen_destroy()
     text_row_count = 0;
 }
 
-bool settings_dark_mode() { return dark_mode; }
 
 uint32_t settings_poll_interval_ms() { return poll_intervals_ms[poll_idx]; }
 
@@ -732,6 +867,7 @@ uint32_t settings_poll_interval_idle_ms()
     const uint32_t idle = poll_intervals_ms[poll_idx] * 5;
     return idle > POLL_IDLE_MAX_MS ? POLL_IDLE_MAX_MS : idle;
 }
+
 
 bool settings_tls_verify() { return tls_verify; }
 

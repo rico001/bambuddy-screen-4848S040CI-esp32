@@ -1084,12 +1084,4 @@ void wifi_screen_destroy()
     focus_primary_lbl = nullptr;
 }
 
-bool wifi_screen_is_connected()
-{
-    return state == WS_CONNECTED && WiFi.status() == WL_CONNECTED;
-}
 
-const char *wifi_screen_ssid()
-{
-    return wifi_screen_is_connected() ? connected_ssid : "";
-}

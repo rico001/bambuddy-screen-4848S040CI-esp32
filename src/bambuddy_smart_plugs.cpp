@@ -9,6 +9,7 @@
 
 #include "bambuddy_config.h"
 #include "bambuddy_http.h"
+#include "bambuddy_status_parse.h"
 
 static constexpr uint32_t REFRESH_INTERVAL_MS = 15000;
 static constexpr uint32_t RETRY_AFTER_ERROR_MS = 10000;
@@ -52,7 +53,7 @@ static bool fetch_status(bambuddy_smart_plug_t &item)
 {
     BambuddyHttp &session = smart_plug_http;
     const char *url = bambuddy_url("/smart-plugs/%d/status", (int)item.id);
-    if (!session.begin(url)) return false;
+    if (!session.begin(url, true)) return false;
 
     HTTPClient &http = session.http();
     // Ein langsames einzelnes Geraet darf nicht die gesamte Liste blockieren.
@@ -62,12 +63,12 @@ static bool fetch_status(bambuddy_smart_plug_t &item)
     read_request_active = true;
     if (!visible) {
         read_request_active = false;
-        session.end();
+        session.end(false);
         return false;
     }
     const int code = http.GET();
     if (code != 200) {
-        session.end();
+        session.end(false);
         read_request_active = false;
         if (visible) {
             Serial.printf("[Smart Plugs] Status %d HTTP %d\n", (int)item.id, code);
@@ -82,7 +83,7 @@ static bool fetch_status(bambuddy_smart_plug_t &item)
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
     read_request_active = false;
     if (err) {
         if (visible) {
@@ -115,7 +116,7 @@ static void fetch_all()
 {
     BambuddyHttp &session = smart_plug_http;
     const char *url = bambuddy_url("/smart-plugs/");
-    if (!session.begin(url)) return;
+    if (!session.begin(url, true)) return;
 
     HTTPClient &http = session.http();
     http.setTimeout(2500);
@@ -124,12 +125,12 @@ static void fetch_all()
     read_request_active = true;
     if (!visible) {
         read_request_active = false;
-        session.end();
+        session.end(false);
         return;
     }
     const int code = http.GET();
     if (code != 200) {
-        session.end();
+        session.end(false);
         read_request_active = false;
         if (!visible) return;
         Serial.printf("[Smart Plugs] Liste HTTP %d\n", code);
@@ -147,7 +148,7 @@ static void fetch_all()
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
     read_request_active = false;
     if (err) {
         if (!visible) return;
@@ -168,7 +169,7 @@ static void fetch_all()
         item.id = obj["id"] | 0;
         if (item.id == 0) continue;
 
-        strncpy(item.name, obj["name"] | "Smart Plug", sizeof(item.name) - 1);
+        bambuddy_copy_field(item.name, sizeof(item.name), obj["name"] | "Smart Plug");
         const char *last_state = obj["last_state"] | "";
         item.state_known = last_state[0] != '\0';
         item.is_on = state_is_on(last_state);
@@ -191,7 +192,7 @@ static void control_plug(int32_t plug_id, bool turn_on)
 {
     BambuddyHttp &session = smart_plug_http;
     const char *url = bambuddy_url("/smart-plugs/%d/control", (int)plug_id);
-    if (!session.begin(url)) {
+    if (!session.begin(url, true)) {
         set_message("Schalten fehlgeschlagen");
         return;
     }
@@ -201,7 +202,7 @@ static void control_plug(int32_t plug_id, bool turn_on)
 
     const int code = http.POST(turn_on ? "{\"action\":\"on\"}"
                                        : "{\"action\":\"off\"}");
-    session.end();
+    session.end(false);
 
     if (code >= 200 && code < 300) {
         set_message(turn_on ? "Smart Plug eingeschaltet" : "Smart Plug ausgeschaltet");

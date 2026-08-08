@@ -4,6 +4,8 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include "bambuddy_api.h"
 #include "bambuddy_config.h"
@@ -176,7 +178,7 @@ static void connect()
 // Public API
 // ============================================================
 
-void bambuddy_mqtt_loop()
+static void mqtt_service()
 {
     const bool wifi_connected = (WiFi.status() == WL_CONNECTED);
 
@@ -215,13 +217,42 @@ void bambuddy_mqtt_loop()
     }
 }
 
-void bambuddy_mqtt_stop()
+static TaskHandle_t mqtt_task_handle = nullptr;
+
+static void mqtt_task(void *)
 {
-    force_disconnect();
-    configured = false;
+    uint32_t next_log_ms = 0;
+
+    for (;;) {
+        // Stack-Reserve mitschreiben. Genau hier hat eine zu knappe
+        // Bemessung schon einmal zugeschlagen: printf mit %f braucht
+        // ueberraschend viel, und der Absturz zeigt dann irgendwo im
+        // Speicherverwalter, nicht an der Ursache.
+        if (millis() >= next_log_ms) {
+            next_log_ms = millis() + 300000;
+            Serial.printf("[MQTT] Stack-Reserve %u Bytes\n",
+                          (unsigned)uxTaskGetStackHighWaterMark(nullptr));
+        }
+
+        if (bambuddy_source_mqtt()) {
+            mqtt_service();
+            vTaskDelay(pdMS_TO_TICKS(50));
+        } else {
+            // Quelle umgestellt: Verbindung sauber schliessen und ruhen
+            if (mqtt.connected()) force_disconnect();
+            vTaskDelay(pdMS_TO_TICKS(500));
+        }
+    }
 }
 
-bool bambuddy_mqtt_connected()
+void bambuddy_mqtt_start()
 {
-    return mqtt.connected();
+    if (mqtt_task_handle) return;
+
+    const BaseType_t ok = xTaskCreatePinnedToCore(mqtt_task, "bb-mqtt", 8192,
+                                                  nullptr, 1, &mqtt_task_handle, 0);
+    Serial.printf("[MQTT] Task %s\n", ok == pdPASS ? "gestartet" : "KONNTE NICHT STARTEN");
+    if (ok != pdPASS) mqtt_task_handle = nullptr;
 }
+
+

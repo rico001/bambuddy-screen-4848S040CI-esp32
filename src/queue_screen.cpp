@@ -11,6 +11,7 @@
 #include "ui_image_view.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_watch.h"
 
 // ============================================================
 // Layout
@@ -282,6 +283,12 @@ static void ui_tick_cb(lv_timer_t *)
 {
     // Nur neu aufbauen, wenn sich wirklich etwas geaendert hat — sonst
     // wuerde die Liste im Sekundentakt neu gezeichnet.
+    // Nicht umbauen, solange eine Rueckfrage offen ist: Der Umbau loescht
+    // die Zeile samt dem Knopf, den der Finger gerade beruehrt hat. Ein
+    // Objekt zu entfernen, waehrend LVGL die Beruehrung darauf noch
+    // verarbeitet, fuehrt in einen haengenden Bildaufbau.
+    if (ui_confirm_is_open()) return;
+
     if (bambuddy_queue_take_fresh()) {
         shown_count = bambuddy_queue_copy(shown, BB_QUEUE_MAX_ITEMS);
         rebuild_list();
@@ -293,6 +300,7 @@ static void ui_tick_cb(lv_timer_t *)
         rebuild_list();
     }
 
+    ui_watch("queue:preview");
     update_preview();
 
     if (bambuddy_queue_message_age() < 6000) {

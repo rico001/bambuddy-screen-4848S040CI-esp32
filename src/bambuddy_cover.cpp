@@ -124,14 +124,14 @@ static void on_png_draw(pngle_t *, uint32_t x, uint32_t y, uint32_t w, uint32_t 
 // brauchen den Kamera-Token, nicht den API-Key.
 static bool fetch_png(const char *url)
 {
-    BambuddyHttp session;
-    if (!session.begin(url)) return false;
+    BambuddyHttp &session = bambuddy_http_shared();
+    if (!session.begin(url, true)) return false;
 
     HTTPClient &http = session.http();
 
     const int code = http.GET();
     if (code != 200) {
-        session.end();
+        session.end(false);
         // 404 heisst schlicht: gerade kein Auftrag mit Vorschaubild
         if (code != 404) Serial.printf("[Cover] HTTP %d (%s)\n", code, url);
         return false;
@@ -139,7 +139,7 @@ static bool fetch_png(const char *url)
 
     pngle_t *pngle = pngle_new();
     if (!pngle) {
-        session.end();
+        session.end(false);
         Serial.println("[Cover] PNG-Decoder konnte nicht angelegt werden");
         return false;
     }
@@ -154,7 +154,7 @@ static bool fetch_png(const char *url)
     const int len = http.getSize();
     int remaining = len;
     bool ok = true;
-    const uint32_t deadline = millis() + 15000;
+    const uint32_t deadline = millis() + 8000;
 
     // Haeppchenweise durch den Decoder schieben: so liegt nie das ganze PNG
     // im Speicher, nur ein Kilobyte davon.
@@ -193,7 +193,7 @@ static bool fetch_png(const char *url)
     }
 
     pngle_destroy(pngle);
-    session.end();
+    session.end(false);
 
     return ok && src_w > 0;
 }

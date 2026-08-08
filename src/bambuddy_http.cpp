@@ -7,7 +7,10 @@
 #include "certs/isrg_roots.h"
 #include "settings_screen.h"
 
-static constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
+// Kurz halten: Jeder Abruf blockiert den Netzwerk-Task, und dahinter warten
+// die uebrigen Screens. Lieber ein schneller Fehlschlag mit Wiederholung als
+// ein Screen, der eine gefuehlte Ewigkeit laedt.
+static constexpr uint32_t HTTP_TIMEOUT_MS = 5000;
 
 bool BambuddyHttp::begin(const char *url, bool keep_alive)
 {
@@ -45,20 +48,8 @@ void BambuddyHttp::add_auth()
     if (key && key[0]) http_.addHeader("X-API-Key", key);
 }
 
-int BambuddyHttp::get()
-{
-    return http_.GET();
-}
 
-int BambuddyHttp::post(const char *body)
-{
-    return http_.POST(body ? body : "");
-}
 
-int BambuddyHttp::del()
-{
-    return http_.sendRequest("DELETE", (uint8_t *)nullptr, 0);
-}
 
 void BambuddyHttp::end(bool close)
 {
@@ -73,4 +64,13 @@ void BambuddyHttp::cancel()
 {
     secure_.stop();
     plain_.stop();
+}
+
+// Bewusst ein einzelnes Objekt mit Funktionsgeltungsdauer: Es wird erst beim
+// ersten Abruf angelegt und lebt danach dauerhaft — genau wie die
+// Verbindung, die es offen haelt.
+BambuddyHttp &bambuddy_http_shared()
+{
+    static BambuddyHttp shared;
+    return shared;
 }
