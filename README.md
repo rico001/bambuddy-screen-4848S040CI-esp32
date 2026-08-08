@@ -56,7 +56,7 @@ Die README empfiehlt, die Datei `lv_conf_template.h` aus der LVGL-Library nach `
 
 - `LV_COLOR_DEPTH 16` — nur RGB565 wird auf diesen Panels unterstützt (wie in der README angegeben)
 - `#if 1` statt `#if 0` am Anfang — aktiviert die Datei (wie in der README beschrieben)
-- `LV_USE_PERF_MONITOR 1` — zum Debugging, wie in der README empfohlen
+- `LV_USE_SYSMON 0` - keine FPS-/CPU-Debuganzeige auf dem Display
 
 ### Step 6 — Build-Flags übernommen (wie beschrieben im ESP32-4848S040CI README)
 

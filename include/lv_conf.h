@@ -25,10 +25,8 @@
 /*1: use custom malloc/free, 0: use the built-in `lv_mem_alloc()` and `lv_mem_free()`*/
 #define LV_USE_STDLIB_MALLOC    LV_STDLIB_BUILTIN
 
-/*Size of the memory available for `lv_malloc()` in bytes (>= 2kB)*/
-/* 64 KB statt 128: der interne RAM ist knapp (128 KB DMA-Puffer des Displays,
- * WiFi-Stack, Task-Stacks), und LVGL braucht fuer unsere Screens keine 128 KB.
- * Der grosse Zeichenpuffer liegt ohnehin im PSRAM. */
+/* Der grosse Zeichenpuffer liegt im PSRAM; fuer LVGL-Objekte bleibt ein
+ * fester interner Pool mit vorhersagbarer Zugriffszeit. */
 #define LV_MEM_SIZE (96U * 1024U)          /*[bytes]*/
 
 /*Size of the memory expand for `lv_malloc()` in bytes*/
@@ -103,8 +101,7 @@
 /*-------------
  * Debug
  *-----------*/
-#define LV_USE_PERF_MONITOR 1
-#define LV_USE_MEM_MONITOR  0
+#define LV_USE_SYSMON 0
 
 /*-------------
  * Others

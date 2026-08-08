@@ -64,6 +64,15 @@ static void on_message(char *topic, uint8_t *payload, unsigned int len)
 
     bambuddy_status_t status;
     bambuddy_status_from_json(doc, &status);
+
+    // AMS wird bewusst ausschliesslich per HTTP geladen. MQTT-Payloads sind
+    // je nach Bambuddy-Version unvollstaendig und duerfen den HTTP-Stand
+    // weder ersetzen noch leeren.
+    status.ams_data_present = false;
+    status.ams_exists = false;
+    status.ams_count = 0;
+    status.tray_now = 255;
+    memset(status.ams, 0, sizeof(status.ams));
     status.updated_ms = millis();
 
     bambuddy_api_publish_status(&status);

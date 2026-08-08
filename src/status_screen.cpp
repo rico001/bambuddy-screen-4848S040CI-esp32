@@ -9,7 +9,12 @@
 #include "bambuddy_camera.h"
 #include "bambuddy_config.h"
 #include "bambuddy_cover.h"
+#include "bambuddy_queue.h"
+#include "printer_icon.h"
 #include "ui_layout.h"
+#include "ui_dialog.h"
+#include "ui_image_view.h"
+#include "ui_theme.h"
 #include "ui_util.h"
 
 // ============================================================
@@ -25,13 +30,9 @@ static constexpr int TEMP_H = 90;
 static constexpr int TEMP_W = (CONTENT_W - 12) / 2;
 static constexpr int CTRL_Y = 356;
 static constexpr int CTRL_H = 52;
-static constexpr int CTRL_W = (CONTENT_W - 20) / 3;
+static constexpr int CTRL_GAP = 8;
+static constexpr int CTRL_W = (CONTENT_W - 3 * CTRL_GAP) / 4;
 
-static constexpr uint32_t COL_MUTED = 0x9E9E9E;
-static constexpr uint32_t COL_OK = 0x4CAF50;
-static constexpr uint32_t COL_WARN = 0xFFB300;
-static constexpr uint32_t COL_ERR = 0xE53935;
-static constexpr uint32_t COL_ACCENT = 0x2196F3;
 static constexpr uint32_t COL_NOZZLE = 0xFF7043;
 static constexpr uint32_t COL_BED = 0x42A5F5;
 
@@ -50,6 +51,7 @@ static lv_obj_t *layer_lbl;
 static lv_obj_t *progress_bar;
 static lv_obj_t *progress_lbl;
 static lv_obj_t *remaining_lbl;
+static lv_obj_t *queue_lbl;
 
 static lv_obj_t *nozzle_value_lbl;
 static lv_obj_t *nozzle_target_lbl;
@@ -59,19 +61,15 @@ static lv_obj_t *bed_target_lbl;
 static lv_obj_t *pause_btn;
 static lv_obj_t *resume_btn;
 static lv_obj_t *stop_btn;
-static lv_obj_t *confirm_box = nullptr;
+static lv_obj_t *light_btn;
+static lv_obj_t *light_btn_lbl;
 
 static lv_obj_t *message_lbl;
 static lv_obj_t *updated_lbl;
 
 // Vollbilder: Kamera-Livebild und Modellansicht
-static lv_obj_t *cam_overlay = nullptr;
-static lv_obj_t *cam_canvas = nullptr;
-static lv_obj_t *cam_hint = nullptr;
-
-static lv_obj_t *big_overlay = nullptr;
-static lv_obj_t *big_canvas = nullptr;
-static lv_obj_t *big_hint = nullptr;
+static ui_image_view_t cam_view;
+static ui_image_view_t big_view;
 
 static bambuddy_status_t status;
 static bool have_status = false;
@@ -83,6 +81,9 @@ static lv_timer_t *ui_timer = nullptr;
 static constexpr uint32_t FAILED_DISPLAY_MS = 30000;
 static char seen_state[16] = "";
 static uint32_t state_since_ms = 0;
+static bool light_switching = false;
+static bool light_target_on = false;
+static uint32_t light_switching_ms = 0;
 
 // ============================================================
 // Formatierung
@@ -226,6 +227,10 @@ static void update_status_fields()
 {
     ui_set_text(name_lbl, status.name[0] ? status.name : "Drucker");
 
+    if (light_switching && status.chamber_light == light_target_on) {
+        light_switching = false;
+    }
+
     // Zeitpunkt des letzten Zustandswechsels merken
     if (strcmp(seen_state, status.state) != 0) {
         strncpy(seen_state, status.state, sizeof(seen_state) - 1);
@@ -286,6 +291,13 @@ static void update_status_fields()
         ui_set_text(remaining_lbl, "");
     }
 
+    const int queue_total = bambuddy_queue_total();
+    if (queue_total > 0) {
+        ui_set_text_fmt(queue_lbl, "%d in Warteschlange", queue_total);
+    } else {
+        ui_set_text(queue_lbl, "");
+    }
+
     ui_set_text_fmt(nozzle_value_lbl, "%d C", (int)(status.nozzle + 0.5f));
     if (status.nozzle_target > 0.5f) {
         ui_set_text_fmt(nozzle_target_lbl, "Ziel %d C", (int)(status.nozzle_target + 0.5f));
@@ -302,156 +314,76 @@ static void update_status_fields()
 }
 
 // ============================================================
-// Kamera-Vollbild
+// Vollbilder
 // ============================================================
 
-static void camera_close();
-
-// Tippen irgendwo auf das Vollbild schliesst es wieder — dieselbe Geste,
-// mit der es geoeffnet wurde, ohne einen zusaetzlichen Schliessen-Knopf.
-static void camera_overlay_cb(lv_event_t *)
+// Beim Schliessen jeweils den Nachschub abbestellen: ein Kamera-Snapshot
+// sind 15 KB alle drei Sekunden, die muessen nicht im Hintergrund
+// weiterlaufen, wenn niemand hinsieht.
+static void camera_closed()
 {
-    camera_close();
+    bambuddy_camera_set_active(false);
 }
 
-// Gemeinsames Geruest fuer beide Vollbilder: schwarze Flaeche ueber allem,
-// mittig das Bild, Tippen schliesst.
-static lv_obj_t *fullscreen_create(lv_event_cb_t close_cb, lv_obj_t **canvas_out,
-                                   lv_obj_t **hint_out, int canvas_w, int canvas_h)
-{
-    lv_obj_t *overlay = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(overlay, SCREEN_W, SCREEN_H);
-    lv_obj_align(overlay, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(overlay, 0, 0);
-    lv_obj_set_style_border_width(overlay, 0, 0);
-    lv_obj_set_style_pad_all(overlay, 0, 0);
-    lv_obj_set_style_bg_color(overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
-    lv_obj_add_flag(overlay, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(overlay, close_cb, LV_EVENT_CLICKED, nullptr);
-
-    // Bewusst ohne lv_image_set_scale: Skalieren wuerde LVGL bei jeder
-    // Neuzeichnung erneut rechnen lassen. Die Bilder kommen deshalb schon
-    // in Anzeigegroesse aus dem Decoder.
-    lv_obj_t *canvas = lv_canvas_create(overlay);
-    lv_obj_set_size(canvas, canvas_w, canvas_h);
-    lv_obj_center(canvas);
-    lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
-
-    lv_obj_t *hint = lv_label_create(overlay);
-    lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
-    lv_obj_set_style_text_align(hint, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_center(hint);
-
-    *canvas_out = canvas;
-    *hint_out = hint;
-    return overlay;
-}
-
-// ============================================================
-// Modell-Vollbild
-// ============================================================
-
-static void cover_big_close()
+static void cover_big_closed()
 {
     bambuddy_cover_set_big_wanted(false);
-    if (big_overlay) lv_obj_add_flag(big_overlay, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void cover_big_overlay_cb(lv_event_t *)
-{
-    cover_big_close();
 }
 
 static void cover_big_open(lv_event_t *)
 {
     if (!bambuddy_cover_has_frame()) return; // nichts zu zeigen
 
-    if (!big_overlay) {
-        big_overlay = fullscreen_create(cover_big_overlay_cb, &big_canvas, &big_hint,
-                                        COVER_BIG_SIZE, COVER_BIG_SIZE);
-    }
-
     // Schon geladen? Dann direkt zeigen, sonst Hinweis bis das Bild da ist.
-    // Geholt wird pro Auftrag genau einmal, nicht wiederholt.
-    if (bambuddy_cover_has_big_frame()) {
-        lv_obj_remove_flag(big_canvas, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(big_hint, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_label_set_text(big_hint, "Modellbild wird geladen ...");
-        lv_obj_remove_flag(big_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(big_canvas, LV_OBJ_FLAG_HIDDEN);
-    }
+    // Geholt wird pro Motiv genau einmal, nicht wiederholt.
+    ui_image_view_open(&big_view, COVER_BIG_SIZE, COVER_BIG_SIZE,
+                       status.job[0] ? status.job : "Modell",
+                       "Modellbild wird geladen ...", cover_big_closed);
 
-    lv_obj_remove_flag(big_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(big_overlay);
+    void *frame = nullptr;
+    if (bambuddy_cover_has_big_frame() && bambuddy_cover_take_big_frame(&frame) && frame) {
+        ui_image_view_set_frame(&big_view, frame, COVER_BIG_SIZE, COVER_BIG_SIZE);
+    }
 
     bambuddy_cover_set_big_wanted(true);
 }
 
 static void update_cover_big()
 {
-    if (!big_overlay || lv_obj_has_flag(big_overlay, LV_OBJ_FLAG_HIDDEN)) return;
+    if (!ui_image_view_is_open(&big_view)) return;
 
     void *frame = nullptr;
     if (bambuddy_cover_take_big_frame(&frame) && frame) {
-        lv_canvas_set_buffer(big_canvas, frame, COVER_BIG_SIZE, COVER_BIG_SIZE,
-                             LV_COLOR_FORMAT_RGB565);
-        lv_obj_remove_flag(big_canvas, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(big_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_invalidate(big_canvas);
+        ui_image_view_set_frame(&big_view, frame, COVER_BIG_SIZE, COVER_BIG_SIZE);
     }
 }
 
 static void camera_open()
 {
-    if (!cam_overlay) {
-        cam_overlay = fullscreen_create(camera_overlay_cb, &cam_canvas, &cam_hint,
-                                        CAM_W, CAM_H);
-    }
-
-    lv_label_set_text(cam_hint, "Kamerabild wird geladen ...");
-    lv_obj_remove_flag(cam_hint, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(cam_canvas, LV_OBJ_FLAG_HIDDEN);
-
-    lv_obj_remove_flag(cam_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(cam_overlay);
-
+    ui_image_view_open(&cam_view, CAM_W, CAM_H, "Kamera",
+                       "Kamerabild wird geladen ...", camera_closed);
     bambuddy_camera_set_active(true);
-}
-
-static void camera_close()
-{
-    // Abschalten, sobald es zu ist: ein Snapshot sind 15 KB, die muessen
-    // nicht im Hintergrund weiterlaufen.
-    bambuddy_camera_set_active(false);
-    if (cam_overlay) lv_obj_add_flag(cam_overlay, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void camera_btn_cb(lv_event_t *)
-{
-    camera_open();
 }
 
 static void update_camera_overlay()
 {
-    if (!cam_overlay || !bambuddy_camera_active()) return;
+    if (!ui_image_view_is_open(&cam_view)) return;
 
     void *frame = nullptr;
     if (bambuddy_camera_take_frame(&frame) && frame) {
-        lv_canvas_set_buffer(cam_canvas, frame, CAM_W, CAM_H, LV_COLOR_FORMAT_RGB565);
-        lv_obj_remove_flag(cam_canvas, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(cam_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_invalidate(cam_canvas);
+        ui_image_view_set_frame(&cam_view, frame, CAM_W, CAM_H);
         return;
     }
 
     const char *error = bambuddy_camera_error();
     if (error[0] && !bambuddy_camera_has_frame()) {
-        ui_set_text(cam_hint, error);
-        ui_set_text_color(cam_hint, COL_ERR);
+        ui_image_view_set_hint(&cam_view, error, COL_ERR);
     }
+}
+
+static void camera_btn_cb(lv_event_t *)
+{
+    camera_open();
 }
 
 // ============================================================
@@ -471,6 +403,10 @@ static void set_enabled(lv_obj_t *btn, bool enabled)
 // in dem Knoepfe auftauchen und verschwinden, laedt zu Fehlgriffen ein.
 static void update_controls()
 {
+    if (light_switching && millis() - light_switching_ms > 10000) {
+        light_switching = false;
+    }
+
     const bool reachable = (bambuddy_api_link() == BB_LINK_OK) &&
                            have_status && status.printer_connected;
     const bool running = reachable && strcasecmp(status.state, "RUNNING") == 0;
@@ -480,50 +416,30 @@ static void update_controls()
     set_enabled(pause_btn, running);
     set_enabled(resume_btn, paused);
     set_enabled(stop_btn, has_job);
+    set_enabled(light_btn, reachable && !light_switching);
+
+    const bool light_on = have_status && status.chamber_light;
+    ui_set_text(light_btn_lbl, light_on ? LV_SYMBOL_CHARGE "  Licht aus"
+                                       : LV_SYMBOL_CHARGE "  Licht an");
+    ui_set_bg_color(light_btn, light_on ? 0x546E7A : COL_WARN);
 }
 
-static void confirm_close()
+static void stop_confirmed(void *)
 {
-    if (confirm_box) {
-        lv_msgbox_close(confirm_box);
-        confirm_box = nullptr;
-    }
-}
-
-static void confirm_no_cb(lv_event_t *)
-{
-    confirm_close();
-}
-
-static void confirm_yes_cb(lv_event_t *)
-{
-    confirm_close();
     bambuddy_api_send_command(BB_CMD_STOP);
 }
 
-// Abbrechen ist die einzige Aktion, die Arbeit vernichtet — und daneben
-// liegt der Pause-Knopf. Deshalb hier eine Rueckfrage, sonst nirgends.
+// Stoppen ist die einzige Aktion, die Arbeit vernichtet — und daneben liegt
+// der Pause-Knopf. Deshalb hier eine Rueckfrage, sonst nirgends.
+// "Stoppen" statt "Abbrechen": Letzteres liest sich in einem Dialog wie
+// "nichts tun" — das Gegenteil dessen, was der Knopf macht.
 static void stop_cb(lv_event_t *)
 {
-    if (confirm_box) return;
-
-    confirm_box = lv_msgbox_create(lv_layer_top());
-    lv_msgbox_add_title(confirm_box, "Druck stoppen?");
-    lv_msgbox_add_text(confirm_box,
-                       "Der laufende Druck wird gestoppt und kann nicht "
-                       "fortgesetzt werden.");
-
-    lv_obj_t *no = lv_msgbox_add_footer_button(confirm_box, "Weiterdrucken");
-    lv_obj_add_event_cb(no, confirm_no_cb, LV_EVENT_CLICKED, nullptr);
-
-    // Bewusst nicht "Abbrechen": das liest sich in einem Dialog wie
-    // "nichts tun" — genau das Gegenteil dessen, was der Knopf macht.
-    lv_obj_t *yes = lv_msgbox_add_footer_button(confirm_box, "Stoppen");
-    lv_obj_set_style_bg_color(yes, lv_color_hex(COL_ERR), 0);
-    lv_obj_add_event_cb(yes, confirm_yes_cb, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_set_width(confirm_box, 400);
-    lv_obj_center(confirm_box);
+    ui_confirm("Druck stoppen?",
+               "Der laufende Druck wird gestoppt und kann nicht "
+               "fortgesetzt werden.",
+               "Weiterdrucken", "Stoppen", COL_ERR,
+               stop_confirmed, nullptr);
 }
 
 static void pause_cb(lv_event_t *)
@@ -534,6 +450,18 @@ static void pause_cb(lv_event_t *)
 static void resume_cb(lv_event_t *)
 {
     bambuddy_api_send_command(BB_CMD_RESUME);
+}
+
+static void light_cb(lv_event_t *)
+{
+    if (light_switching || !have_status) return;
+
+    light_target_on = !status.chamber_light;
+    if (bambuddy_api_send_command(light_target_on ? BB_CMD_LIGHT_ON : BB_CMD_LIGHT_OFF)) {
+        light_switching = true;
+        light_switching_ms = millis();
+        update_controls();
+    }
 }
 
 static void update_cover()
@@ -623,12 +551,18 @@ static lv_obj_t *muted_label(lv_obj_t *parent, const char *text)
 
 static void build_header(lv_obj_t *parent)
 {
+    lv_obj_t *printer_img = lv_image_create(parent);
+    lv_image_set_src(printer_img, &printer_icon);
+    lv_obj_set_style_image_recolor(printer_img, lv_color_white(), 0);
+    lv_obj_set_style_image_recolor_opa(printer_img, LV_OPA_COVER, 0);
+    lv_obj_align(printer_img, LV_ALIGN_TOP_LEFT, PAD + 2, 7);
+
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
     lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
-    lv_obj_set_width(name_lbl, 250);
+    lv_obj_set_width(name_lbl, 212);
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 12);
+    lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
 
     badge = lv_obj_create(parent);
     lv_obj_set_height(badge, 28);
@@ -723,9 +657,14 @@ static void build_job_card(lv_obj_t *parent)
     lv_obj_set_style_text_color(remaining_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(remaining_lbl, LV_ALIGN_TOP_LEFT, col_x, 134);
 
+    queue_lbl = muted_label(card, "");
+    lv_obj_set_width(queue_lbl, col_w);
+    lv_label_set_long_mode(queue_lbl, LV_LABEL_LONG_DOT);
+    lv_obj_align(queue_lbl, LV_ALIGN_TOP_LEFT, col_x, 154);
+
     progress_bar = lv_bar_create(card);
     lv_obj_set_size(progress_bar, CONTENT_W - 28, 16);
-    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 160);
+    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 176);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(progress_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
@@ -762,10 +701,12 @@ static lv_obj_t *control_button(lv_obj_t *parent, int x, const char *symbol,
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, x, CTRL_Y);
     lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
     lv_obj_set_style_radius(btn, 10, 0);
+    lv_obj_set_style_pad_hor(btn, 4, 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text_fmt(lbl, "%s  %s", symbol, text);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
     lv_obj_center(lbl);
 
     return btn;
@@ -775,10 +716,13 @@ static void build_controls(lv_obj_t *parent)
 {
     pause_btn = control_button(parent, PAD, LV_SYMBOL_PAUSE, "Pause",
                                0x546E7A, pause_cb);
-    resume_btn = control_button(parent, PAD + CTRL_W + 10, LV_SYMBOL_PLAY, "Start",
+    resume_btn = control_button(parent, PAD + CTRL_W + CTRL_GAP, LV_SYMBOL_PLAY, "Start",
                                 COL_OK, resume_cb);
-    stop_btn = control_button(parent, PAD + 2 * (CTRL_W + 10), LV_SYMBOL_STOP, "Stopp",
+    stop_btn = control_button(parent, PAD + 2 * (CTRL_W + CTRL_GAP), LV_SYMBOL_STOP, "Stopp",
                               COL_ERR, stop_cb);
+    light_btn = control_button(parent, PAD + 3 * (CTRL_W + CTRL_GAP), LV_SYMBOL_CHARGE,
+                               "Licht an", COL_WARN, light_cb);
+    light_btn_lbl = lv_obj_get_child(light_btn, 0);
 }
 
 void status_screen_create(lv_obj_t *parent)

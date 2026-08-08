@@ -12,11 +12,13 @@
 #include <freertos/task.h>
 
 #include "bambuddy_camera.h"
+#include "bambuddy_archive.h"
 #include "bambuddy_config.h"
 #include "bambuddy_http.h"
 #include "bambuddy_cover.h"
 #include "bambuddy_mqtt.h"
 #include "bambuddy_queue.h"
+#include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "settings_screen.h"
 
@@ -33,11 +35,20 @@ static SemaphoreHandle_t status_mutex = nullptr;
 static TaskHandle_t api_task_handle = nullptr;
 static QueueHandle_t cmd_queue = nullptr;
 
+struct command_request_t {
+    bambuddy_cmd_t type;
+    float first;
+    float second;
+};
+
 static char cmd_message[64] = "";
 static volatile uint32_t cmd_message_ms = 0;
 
 static constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
 static constexpr uint32_t RETRY_AFTER_ERROR_MS = 5000;
+static constexpr uint32_t AMS_REFRESH_MS = 30000;
+static volatile bool ams_visible = false;
+static uint32_t last_ams_fetch_ms = 0;
 
 // ============================================================
 // TLS-Speicher ins PSRAM verlagern
@@ -96,6 +107,23 @@ static bool state_is_printing(const char *state)
 // HTTP
 // ============================================================
 
+static void add_ams_filter(JsonDocument &filter)
+{
+    filter["ams_exists"] = true;
+    filter["tray_now"] = true;
+    JsonObject ams_filter = filter["ams"].add<JsonObject>();
+    ams_filter["id"] = true;
+    ams_filter["humidity"] = true;
+    ams_filter["temp"] = true;
+    ams_filter["is_ams_ht"] = true;
+    JsonObject tray_filter = ams_filter["tray"].add<JsonObject>();
+    tray_filter["id"] = true;
+    tray_filter["tray_color"] = true;
+    tray_filter["tray_type"] = true;
+    tray_filter["remain"] = true;
+    tray_filter["exists"] = true;
+}
+
 // Holt den Druckerstatus und schreibt ihn in den geteilten Zustand.
 static void poll_status()
 {
@@ -116,7 +144,6 @@ static void poll_status()
     }
 
     HTTPClient &http = session.http();
-    http.addHeader("X-API-Key", bambuddy_api_key());
 
     const int code = http.GET();
 
@@ -148,6 +175,8 @@ static void poll_status()
     filter["layer_num"] = true;
     filter["total_layers"] = true;
     filter["temperatures"] = true;
+    filter["chamber_light"] = true;
+    add_ams_filter(filter);
     filter["awaiting_plate_clear"] = true;
 
     JsonDocument doc;
@@ -167,6 +196,55 @@ static void poll_status()
     bambuddy_api_publish_status(&s);
 }
 
+// MQTT-Statusmeldungen enthalten je nach Bambuddy-Version nicht den ganzen
+// AMS-Block. Dieser kleine HTTP-Abruf ergaenzt nur die AMS-Felder und laesst
+// den restlichen, aktuelleren MQTT-Status unangetastet.
+static void fetch_ams_status()
+{
+    last_ams_fetch_ms = millis();
+    if (WiFi.status() != WL_CONNECTED || !bambuddy_config_complete()) return;
+
+    BambuddyHttp session;
+    const char *url = bambuddy_url("/printers/%d/status", bambuddy_printer_id());
+    if (!session.begin(url)) return;
+
+    HTTPClient &http = session.http();
+
+    const int code = http.GET();
+    if (code != 200) {
+        session.end();
+        Serial.printf("[AMS] Status HTTP %d\n", code);
+        return;
+    }
+
+    JsonDocument filter;
+    add_ams_filter(filter);
+
+    JsonDocument doc;
+    const DeserializationError err =
+        deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+    session.end();
+    if (err) {
+        Serial.printf("[AMS] Status nicht lesbar: %s\n", err.c_str());
+        return;
+    }
+
+    bambuddy_status_t fetched;
+    bambuddy_status_from_json(doc, &fetched);
+    if (!fetched.ams_data_present) return;
+
+    xSemaphoreTake(status_mutex, portMAX_DELAY);
+    shared_status.ams_data_present = true;
+    shared_status.ams_exists = fetched.ams_exists;
+    shared_status.ams_count = fetched.ams_count;
+    shared_status.tray_now = fetched.tray_now;
+    memcpy(shared_status.ams, fetched.ams, sizeof(shared_status.ams));
+    shared_fresh = true;
+    xSemaphoreGive(status_mutex);
+
+    Serial.printf("[AMS] %d Einheit(en) aktualisiert\n", (int)fetched.ams_count);
+}
+
 // ============================================================
 // Steuerbefehle
 // ============================================================
@@ -178,25 +256,64 @@ static void set_command_message(const char *msg)
     cmd_message_ms = millis();
 }
 
-static void execute_command(bambuddy_cmd_t cmd)
+static void execute_command(const command_request_t &cmd)
 {
+    if (cmd.type == BB_CMD_REFRESH_AMS) {
+        fetch_ams_status();
+        return;
+    }
+    if (cmd.type == BB_CMD_REFRESH_SMART_PLUGS) {
+        bambuddy_smart_plugs_update();
+        return;
+    }
+
     struct cmd_info_t {
-        const char *path;
         const char *ok_text;
         const char *fail_text;
     };
 
+    char path[112];
     cmd_info_t info;
-    switch (cmd) {
+    switch (cmd.type) {
     case BB_CMD_PAUSE:
-        info = {"/printers/%d/print/pause", "Pause gesendet", "Pause fehlgeschlagen"};
+        snprintf(path, sizeof(path), "/printers/%d/print/pause", bambuddy_printer_id());
+        info = {"Pause gesendet", "Pause fehlgeschlagen"};
         break;
     case BB_CMD_RESUME:
-        info = {"/printers/%d/print/resume", "Fortsetzen gesendet", "Fortsetzen fehlgeschlagen"};
+        snprintf(path, sizeof(path), "/printers/%d/print/resume", bambuddy_printer_id());
+        info = {"Fortsetzen gesendet", "Fortsetzen fehlgeschlagen"};
+        break;
+    case BB_CMD_LIGHT_ON:
+        snprintf(path, sizeof(path), "/printers/%d/chamber-light?on=true", bambuddy_printer_id());
+        info = {"Licht eingeschaltet", "Licht konnte nicht eingeschaltet werden"};
+        break;
+    case BB_CMD_LIGHT_OFF:
+        snprintf(path, sizeof(path), "/printers/%d/chamber-light?on=false", bambuddy_printer_id());
+        info = {"Licht ausgeschaltet", "Licht konnte nicht ausgeschaltet werden"};
+        break;
+    case BB_CMD_JOG_XY:
+        snprintf(path, sizeof(path), "/printers/%d/xy-jog?x=%.2f&y=%.2f",
+                 bambuddy_printer_id(), cmd.first, cmd.second);
+        info = {"XY-Bewegung gesendet", "XY-Bewegung fehlgeschlagen"};
+        break;
+    case BB_CMD_JOG_Z:
+        snprintf(path, sizeof(path), "/printers/%d/bed-jog?distance=%.2f",
+                 bambuddy_printer_id(), cmd.first);
+        info = {"Z-Bewegung gesendet", "Z-Bewegung fehlgeschlagen"};
+        break;
+    case BB_CMD_JOG_EXTRUDER:
+        snprintf(path, sizeof(path), "/printers/%d/extruder-jog?distance=%.2f",
+                 bambuddy_printer_id(), cmd.first);
+        info = {"Extruderbewegung gesendet", "Extruderbewegung fehlgeschlagen"};
+        break;
+    case BB_CMD_HOME:
+        snprintf(path, sizeof(path), "/printers/%d/home-axes?axes=all", bambuddy_printer_id());
+        info = {"Homing gestartet", "Homing fehlgeschlagen"};
         break;
     case BB_CMD_STOP:
     default:
-        info = {"/printers/%d/print/stop", "Abbruch gesendet", "Abbruch fehlgeschlagen"};
+        snprintf(path, sizeof(path), "/printers/%d/print/stop", bambuddy_printer_id());
+        info = {"Abbruch gesendet", "Abbruch fehlgeschlagen"};
         break;
     }
 
@@ -208,14 +325,13 @@ static void execute_command(bambuddy_cmd_t cmd)
     // Steuerbefehle gehen immer ueber die REST-API — auch wenn der Status
     // per MQTT kommt. Der API-Key muss dafuer "Drucker steuern" duerfen.
     BambuddyHttp session;
-    const char *url = bambuddy_url(info.path, bambuddy_printer_id());
+    const char *url = bambuddy_url("%s", path);
     if (!session.begin(url)) {
         set_command_message(info.fail_text);
         return;
     }
 
     HTTPClient &http = session.http();
-    http.addHeader("X-API-Key", bambuddy_api_key());
 
     const int code = http.POST("");
     session.end();
@@ -241,7 +357,6 @@ static void execute_command(bambuddy_cmd_t cmd)
 static void api_task(void *)
 {
     bool was_mqtt = false;
-    uint32_t next_camera_check_ms = 0;
 
     for (;;) {
         task_heartbeat_ms = millis();
@@ -299,16 +414,26 @@ static void api_task(void *)
             // Warteschlange nur, solange ihr Screen sichtbar ist —
             // Startbefehle werden aber immer ausgefuehrt.
             bambuddy_queue_update();
+            bambuddy_archive_update();
+            bambuddy_smart_plugs_update();
+
+            if (use_mqtt && ams_visible &&
+                (!last_ams_fetch_ms || millis() - last_ams_fetch_ms >= AMS_REFRESH_MS)) {
+                fetch_ams_status();
+            }
         }
 
         // Bei offenem Kamera-Vollbild oefter aufwachen — sonst haenge der
         // 3-Sekunden-Takt am Leerlaufintervall von bis zu 30 Sekunden.
-        if ((bambuddy_camera_active() || bambuddy_queue_visible()) && wait_ms > 500) wait_ms = 500;
+        if ((bambuddy_camera_active() || bambuddy_queue_visible() ||
+             bambuddy_archive_visible() || bambuddy_smart_plugs_visible()) && wait_ms > 500) {
+            wait_ms = 500;
+        }
 
         // Warten, aber auf Tastendruck sofort reagieren: kommt ein Befehl
         // herein, wird er ausgefuehrt und direkt danach der Status neu
         // geholt — sonst haengt die Anzeige dem Knopfdruck hinterher.
-        bambuddy_cmd_t cmd;
+        command_request_t cmd;
         if (cmd_queue && xQueueReceive(cmd_queue, &cmd, pdMS_TO_TICKS(wait_ms)) == pdTRUE) {
             execute_command(cmd);
         }
@@ -362,7 +487,7 @@ void bambuddy_api_start()
     status_mutex = xSemaphoreCreateMutex();
     memset(&shared_status, 0, sizeof(shared_status));
 
-    cmd_queue = xQueueCreate(4, sizeof(bambuddy_cmd_t));
+    cmd_queue = xQueueCreate(8, sizeof(command_request_t));
 
     if (!status_mutex || !cmd_queue) {
         Serial.println("[Bambuddy] Mutex oder Befehlsschlange konnte nicht angelegt werden");
@@ -391,7 +516,15 @@ void bambuddy_api_publish_status(const bambuddy_status_t *status)
     }
 
     xSemaphoreTake(status_mutex, portMAX_DELAY);
-    shared_status = *status;
+    bambuddy_status_t merged = *status;
+    if (!status->ams_data_present && shared_status.ams_data_present) {
+        merged.ams_data_present = true;
+        merged.ams_exists = shared_status.ams_exists;
+        merged.ams_count = shared_status.ams_count;
+        merged.tray_now = shared_status.tray_now;
+        memcpy(merged.ams, shared_status.ams, sizeof(merged.ams));
+    }
+    shared_status = merged;
     shared_fresh = true;
     shared_link = BB_LINK_OK;
     shared_error[0] = '\0';
@@ -416,6 +549,26 @@ bool bambuddy_api_take(bambuddy_status_t *out)
     return fresh;
 }
 
+bool bambuddy_api_copy_status(bambuddy_status_t *out)
+{
+    if (!status_mutex || !out) return false;
+
+    xSemaphoreTake(status_mutex, portMAX_DELAY);
+    *out = shared_status;
+    const bool available = shared_status.updated_ms != 0;
+    xSemaphoreGive(status_mutex);
+    return available;
+}
+
+void bambuddy_api_set_ams_visible(bool visible)
+{
+    ams_visible = visible;
+    if (visible && cmd_queue) {
+        const command_request_t cmd = {BB_CMD_REFRESH_AMS, 0.0f, 0.0f};
+        xQueueSend(cmd_queue, &cmd, 0);
+    }
+}
+
 bambuddy_link_t bambuddy_api_link()
 {
     return shared_link;
@@ -429,7 +582,42 @@ uint32_t bambuddy_api_heartbeat()
 bool bambuddy_api_send_command(bambuddy_cmd_t cmd)
 {
     if (!cmd_queue) return false;
-    return xQueueSend(cmd_queue, &cmd, 0) == pdTRUE;
+    const command_request_t request = {cmd, 0.0f, 0.0f};
+    return xQueueSend(cmd_queue, &request, 0) == pdTRUE;
+}
+
+static bool send_motion_command(bambuddy_cmd_t type, float first, float second = 0.0f)
+{
+    if (!cmd_queue) return false;
+    const command_request_t request = {type, first, second};
+    return xQueueSend(cmd_queue, &request, 0) == pdTRUE;
+}
+
+bool bambuddy_api_send_xy_jog(float x, float y)
+{
+    return send_motion_command(BB_CMD_JOG_XY, x, y);
+}
+
+bool bambuddy_api_send_z_jog(float distance)
+{
+    return send_motion_command(BB_CMD_JOG_Z, distance);
+}
+
+bool bambuddy_api_send_extruder_jog(float distance)
+{
+    return send_motion_command(BB_CMD_JOG_EXTRUDER, distance);
+}
+
+bool bambuddy_api_send_home()
+{
+    return send_motion_command(BB_CMD_HOME, 0.0f);
+}
+
+bool bambuddy_api_refresh_smart_plugs()
+{
+    if (!cmd_queue) return false;
+    const command_request_t request = {BB_CMD_REFRESH_SMART_PLUGS, 0.0f, 0.0f};
+    return xQueueSend(cmd_queue, &request, 0) == pdTRUE;
 }
 
 const char *bambuddy_api_command_message()

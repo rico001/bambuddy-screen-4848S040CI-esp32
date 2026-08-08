@@ -9,8 +9,10 @@
 
 #include "bambuddy_config.h"
 #include "bambuddy_http.h"
+#include "bambuddy_status_parse.h"
 
 static constexpr uint32_t REFRESH_INTERVAL_MS = 10000;
+static constexpr uint32_t HIDDEN_REFRESH_INTERVAL_MS = 30000;
 // Die AMS-Belegung aendert sich nur, wenn jemand Spulen wechselt
 static constexpr uint32_t AMS_INTERVAL_MS = 60000;
 #define MAX_AMS_SLOTS 16
@@ -35,7 +37,7 @@ static char message[64] = "";
 static volatile uint32_t message_ms = 0;
 
 struct ams_slot_t {
-    char label[4];   // "A1" ... "D4"
+    char label[6];   // "A1" ... "D4", mit Reserve fuer zweistellige Slots
     char type[12];   // "PLA", "PETG", ...
     uint32_t color;
 };
@@ -61,13 +63,6 @@ static void set_message(const char *text)
     message_ms = millis();
 }
 
-// "#F6BF08FF" -> 0xF6BF08
-static uint32_t parse_color(const char *value)
-{
-    if (!value || value[0] != '#' || strlen(value) < 7) return 0x9E9E9E;
-    return (uint32_t)strtoul(String(value).substring(1, 7).c_str(), nullptr, 16);
-}
-
 // ============================================================
 // Liste holen
 // ============================================================
@@ -82,7 +77,6 @@ static void fetch_queue()
     if (!session.begin(url)) return;
 
     HTTPClient &http = session.http();
-    http.addHeader("X-API-Key", bambuddy_api_key());
 
     const int code = http.GET();
     if (code != 200) {
@@ -139,7 +133,7 @@ static void fetch_queue()
         it.print_seconds = obj["print_time_seconds"] | 0;
         it.grams = obj["filament_used_grams"] | 0.0f;
         strncpy(it.filament, obj["filament_type"] | "", sizeof(it.filament) - 1);
-        it.color = parse_color(obj["filament_color"] | "");
+        it.color = bambuddy_parse_hex_color(obj["filament_color"] | "");
         it.manual_start = obj["manual_start"] | false;
 
         count++;
@@ -167,7 +161,6 @@ static void fetch_ams()
     if (!session.begin(url)) return;
 
     HTTPClient &http = session.http();
-    http.addHeader("X-API-Key", bambuddy_api_key());
 
     if (http.GET() != 200) {
         session.end();
@@ -199,18 +192,21 @@ static void fetch_ams()
             const char *type = t["tray_type"] | "";
             if (type[0] == '\0') continue; // leerer Slot
 
-            ams_slot_t &slot = ams_slots[count];
             // Beschriftung wie im Bambu-Umfeld: Einheit als Buchstabe,
             // Slot als Ziffer ab 1 — also A1 bis A4 beim ersten AMS.
-            snprintf(slot.label, sizeof(slot.label), "%c%d",
-                     (char)('A' + unit_id), (int)(t["id"] | 0) + 1);
+            // Werte aus dem JSON sind ungeprueft, deshalb eingrenzen: sonst
+            // passt die Beschriftung nicht in den Puffer.
+            const int slot_no = (int)(t["id"] | 0) + 1;
+            if (slot_no < 1 || slot_no > 99) continue;
+            const char unit_letter = (unit_id >= 0 && unit_id < 26)
+                                         ? (char)('A' + unit_id) : '?';
+
+            ams_slot_t &slot = ams_slots[count];
+            snprintf(slot.label, sizeof(slot.label), "%c%d", unit_letter, slot_no);
             strncpy(slot.type, type, sizeof(slot.type) - 1);
             slot.type[sizeof(slot.type) - 1] = '\0';
 
-            const char *color = t["tray_color"] | "";
-            slot.color = strlen(color) >= 6
-                             ? (uint32_t)strtoul(String(color).substring(0, 6).c_str(), nullptr, 16)
-                             : 0x9E9E9E;
+            slot.color = bambuddy_parse_hex_color(t["tray_color"] | "");
             count++;
         }
     }
@@ -229,7 +225,6 @@ static bool send(const char *method, const char *url)
     if (!session.begin(url)) return false;
 
     HTTPClient &http = session.http();
-    http.addHeader("X-API-Key", bambuddy_api_key());
 
     const int code = http.sendRequest(method, (uint8_t *)nullptr, 0);
     session.end();
@@ -314,14 +309,13 @@ void bambuddy_queue_update()
         do_delete(delete_id);
     }
 
-    if (!visible) return;
-
     const uint32_t now = millis();
     if (last_error_ms && (now - last_error_ms) < RETRY_AFTER_ERROR_MS) return;
-    if (last_fetch_ms && (now - last_fetch_ms) < REFRESH_INTERVAL_MS) return;
+    const uint32_t interval = visible ? REFRESH_INTERVAL_MS : HIDDEN_REFRESH_INTERVAL_MS;
+    if (last_fetch_ms && (now - last_fetch_ms) < interval) return;
 
     // AMS-Belegung deutlich seltener holen als die Liste
-    if (!last_ams_ms || (now - last_ams_ms) >= AMS_INTERVAL_MS) {
+    if (visible && (!last_ams_ms || (now - last_ams_ms) >= AMS_INTERVAL_MS)) {
         last_ams_ms = now;
         fetch_ams();
     }
