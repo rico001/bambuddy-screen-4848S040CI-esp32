@@ -51,23 +51,23 @@ If you mean that square ESP32 touchscreen board with USB-C: yes, this is the one
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/1000020759.jpg" alt="Queue view on the Bambuddy display" width="100%" height="320" style="object-fit: cover; object-position: center;">
+      <img src="docs/1000020759.jpg" alt="Queue view on the Bambuddy display" width="100%">
     </td>
     <td align="center" width="50%">
-      <img src="docs/1000020763.jpg" alt="Smart plug controls on the Bambuddy display" width="100%" height="320" style="object-fit: cover; object-position: center;">
+      <img src="docs/1000020763.jpg" alt="Smart plug controls on the Bambuddy display" width="100%">
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/1000020761.jpg" alt="Bambuddy display during printing" width="100%" height="320" style="object-fit: cover; object-position: center;">
+      <img src="docs/1000020761.jpg" alt="Bambuddy display during printing" width="100%">
     </td>
     <td align="center" width="50%">
-      <img src="docs/1000020762.jpg" alt="Close-up of the Bambuddy display interface" width="100%" height="320" style="object-fit: cover; object-position: center;">
+      <img src="docs/1000020762.jpg" alt="Close-up of the Bambuddy display interface" width="100%">
     </td>
   </tr>
   <tr>
     <td align="center" colspan="2">
-      <img src="docs/1000020757.jpg" alt="Main printer status view on the Bambuddy display" width="49%" height="320" style="object-fit: cover; object-position: center;">
+      <img src="docs/1000020757.jpg" alt="Main printer status view on the Bambuddy display" width="60%">
     </td>
   </tr>
 </table>
