@@ -1,0 +1,430 @@
+// Demo-Screens aus dem Ausgangsprojekt (Widget-Schau).
+// Bewusst nicht kompiliert: Die Endung .disabled sorgt dafuer, dass
+// PlatformIO die Datei ignoriert. Sie belegten zusammen mehr LVGL-Speicher
+// als die eigentliche Anwendung. Zum Reaktivieren: in .cpp umbenennen,
+// Funktionen in main.cpp deklarieren und Tiles ergaenzen.
+
+#include <Arduino.h>
+#include <esp32_smartdisplay.h>
+
+// --- Screen 1: Button + Text Input ---
+static void btn_event_cb(lv_event_t *e)
+{
+    lv_obj_t *label = (lv_obj_t *)lv_event_get_user_data(e);
+    btn_count++;
+    lv_label_set_text_fmt(label, "Pressed %d times", btn_count);
+}
+
+static void create_screen_showcase0(lv_obj_t *parent)
+{
+    // Title
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, "Screen 1: Button & Input");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    // --- Top half: Button + Counter ---
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, 200, 50);
+    lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 55);
+
+    lv_obj_t *btn_label = lv_label_create(btn);
+    lv_label_set_text(btn_label, "Click me!");
+    lv_obj_center(btn_label);
+
+    lv_obj_t *counter = lv_label_create(parent);
+    lv_label_set_text(counter, "Pressed 0 times");
+    lv_obj_align(counter, LV_ALIGN_TOP_MID, 0, 115);
+
+    lv_obj_add_event_cb(btn, btn_event_cb, LV_EVENT_CLICKED, counter);
+
+    // --- Bottom half: Textarea + Keyboard ---
+    lv_obj_t *ta = lv_textarea_create(parent);
+    lv_textarea_set_placeholder_text(ta, "Type something...");
+    lv_obj_set_size(ta, 440, 60);
+    lv_obj_align(ta, LV_ALIGN_TOP_MID, 0, 150);
+    lv_textarea_set_one_line(ta, false);
+
+    lv_obj_t *kb = lv_keyboard_create(parent);
+    lv_obj_set_size(kb, 460, 250);
+    lv_obj_align(kb, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_keyboard_set_textarea(kb, ta);
+}
+
+// --- Screen 3: Widget Showcase ---
+static void create_screen_showcase1(lv_obj_t *parent)
+{
+    // Title
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, "Screen 3: Widgets");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    // 1) Slider
+    lv_obj_t *slider_label = lv_label_create(parent);
+    lv_label_set_text(slider_label, "Slider:");
+    lv_obj_align(slider_label, LV_ALIGN_TOP_LEFT, 20, 60);
+
+    lv_obj_t *slider = lv_slider_create(parent);
+    lv_obj_set_width(slider, 200);
+    lv_obj_align(slider, LV_ALIGN_TOP_LEFT, 110, 65);
+    lv_slider_set_range(slider, 0, 100);
+    lv_slider_set_value(slider, 50, LV_ANIM_OFF);
+
+    // 2) Checkbox
+    lv_obj_t *cb = lv_checkbox_create(parent);
+    lv_checkbox_set_text(cb, "Enable something");
+    lv_obj_align(cb, LV_ALIGN_TOP_LEFT, 20, 110);
+
+    // 3) Dropdown
+    lv_obj_t *dd_label = lv_label_create(parent);
+    lv_label_set_text(dd_label, "Select:");
+    lv_obj_align(dd_label, LV_ALIGN_TOP_LEFT, 20, 160);
+
+    lv_obj_t *dd = lv_dropdown_create(parent);
+    lv_dropdown_set_options(dd, "Option A\nOption B\nOption C\nOption D");
+    lv_obj_set_width(dd, 180);
+    lv_obj_align(dd, LV_ALIGN_TOP_LEFT, 110, 155);
+
+    // 4) Arc (gauge style)
+    lv_obj_t *arc = lv_arc_create(parent);
+    lv_obj_set_size(arc, 120, 120);
+    lv_arc_set_range(arc, 0, 100);
+    lv_arc_set_value(arc, 72);
+    lv_obj_align(arc, LV_ALIGN_TOP_RIGHT, -40, 55);
+
+    lv_obj_t *arc_val = lv_label_create(arc);
+    lv_label_set_text(arc_val, "72%");
+    lv_obj_center(arc_val);
+
+    // 5) Switch
+    lv_obj_t *sw_label = lv_label_create(parent);
+    lv_label_set_text(sw_label, "Switch:");
+    lv_obj_align(sw_label, LV_ALIGN_TOP_LEFT, 20, 215);
+
+    lv_obj_t *sw = lv_switch_create(parent);
+    lv_obj_align(sw, LV_ALIGN_TOP_LEFT, 110, 210);
+
+    // Swipe hint
+    lv_obj_t *hint = lv_label_create(parent);
+    lv_label_set_text(hint, "< swipe to navigate >");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
+// --- Screen 4: More Widgets ---
+static void create_screen_showcase2(lv_obj_t *parent)
+{
+    // Title
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, "Screen 4: More Widgets");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    // --- Left column ---
+
+    // 1) Progress Bar
+    lv_obj_t *bar_label = lv_label_create(parent);
+    lv_label_set_text(bar_label, "Progress:");
+    lv_obj_align(bar_label, LV_ALIGN_TOP_LEFT, 20, 60);
+
+    lv_obj_t *bar = lv_bar_create(parent);
+    lv_obj_set_size(bar, 180, 20);
+    lv_obj_align(bar, LV_ALIGN_TOP_LEFT, 110, 62);
+    lv_bar_set_value(bar, 65, LV_ANIM_OFF);
+
+    // 2) LED indicators
+    lv_obj_t *led_label = lv_label_create(parent);
+    lv_label_set_text(led_label, "Status:");
+    lv_obj_align(led_label, LV_ALIGN_TOP_LEFT, 20, 100);
+
+    lv_obj_t *led_green = lv_led_create(parent);
+    lv_obj_set_size(led_green, 25, 25);
+    lv_obj_align(led_green, LV_ALIGN_TOP_LEFT, 110, 95);
+    lv_led_set_color(led_green, lv_color_hex(0x00FF00));
+    lv_led_on(led_green);
+
+    lv_obj_t *led_yellow = lv_led_create(parent);
+    lv_obj_set_size(led_yellow, 25, 25);
+    lv_obj_align(led_yellow, LV_ALIGN_TOP_LEFT, 150, 95);
+    lv_led_set_color(led_yellow, lv_color_hex(0xFFCC00));
+    lv_led_set_brightness(led_yellow, 150);
+
+    lv_obj_t *led_red = lv_led_create(parent);
+    lv_obj_set_size(led_red, 25, 25);
+    lv_obj_align(led_red, LV_ALIGN_TOP_LEFT, 190, 95);
+    lv_led_set_color(led_red, lv_color_hex(0xFF0000));
+    lv_led_off(led_red);
+
+    // 3) Roller
+    lv_obj_t *roller_label = lv_label_create(parent);
+    lv_label_set_text(roller_label, "Roller:");
+    lv_obj_align(roller_label, LV_ALIGN_TOP_LEFT, 20, 140);
+
+    lv_obj_t *roller = lv_roller_create(parent);
+    lv_roller_set_options(roller,
+        "January\nFebruary\nMarch\nApril\nMay\nJune\n"
+        "July\nAugust\nSeptember\nOctober\nNovember\nDecember",
+        LV_ROLLER_MODE_NORMAL);
+    lv_roller_set_visible_row_count(roller, 3);
+    lv_obj_set_width(roller, 140);
+    lv_obj_align(roller, LV_ALIGN_TOP_LEFT, 110, 135);
+
+    // --- Right column ---
+
+    // 4) Spinner (loading animation)
+    lv_obj_t *spinner = lv_spinner_create(parent);
+    lv_obj_set_size(spinner, 60, 60);
+    lv_obj_align(spinner, LV_ALIGN_TOP_RIGHT, -60, 55);
+    lv_spinner_set_anim_params(spinner, 1000, 200);
+
+    lv_obj_t *spin_label = lv_label_create(parent);
+    lv_label_set_text(spin_label, "Loading...");
+    lv_obj_align(spin_label, LV_ALIGN_TOP_RIGHT, -40, 120);
+
+    // 5) Spinbox
+    lv_obj_t *spb_label = lv_label_create(parent);
+    lv_label_set_text(spb_label, "Value:");
+    lv_obj_align(spb_label, LV_ALIGN_TOP_RIGHT, -140, 150);
+
+    lv_obj_t *spinbox = lv_spinbox_create(parent);
+    lv_spinbox_set_range(spinbox, 0, 999);
+    lv_spinbox_set_value(spinbox, 42);
+    lv_spinbox_set_digit_format(spinbox, 3, 0);
+    lv_obj_set_width(spinbox, 80);
+    lv_obj_align(spinbox, LV_ALIGN_TOP_RIGHT, -40, 145);
+
+    // --- Bottom: Table ---
+    lv_obj_t *table = lv_table_create(parent);
+    lv_table_set_column_count(table, 3);
+    lv_table_set_column_width(table, 0, 140);
+    lv_table_set_column_width(table, 1, 140);
+    lv_table_set_column_width(table, 2, 140);
+
+    lv_table_set_cell_value(table, 0, 0, "Sensor");
+    lv_table_set_cell_value(table, 0, 1, "Value");
+    lv_table_set_cell_value(table, 0, 2, "Status");
+
+    lv_table_set_cell_value(table, 1, 0, "Temperature");
+    lv_table_set_cell_value(table, 1, 1, "23.5 C");
+    lv_table_set_cell_value(table, 1, 2, "OK");
+
+    lv_table_set_cell_value(table, 2, 0, "Humidity");
+    lv_table_set_cell_value(table, 2, 1, "58%");
+    lv_table_set_cell_value(table, 2, 2, "OK");
+
+    lv_table_set_cell_value(table, 3, 0, "Pressure");
+    lv_table_set_cell_value(table, 3, 1, "1013 hPa");
+    lv_table_set_cell_value(table, 3, 2, "WARN");
+
+    lv_obj_set_size(table, 440, 160);
+    lv_obj_align(table, LV_ALIGN_BOTTOM_MID, 0, -40);
+
+    // Swipe hint
+    lv_obj_t *hint = lv_label_create(parent);
+    lv_label_set_text(hint, "< swipe to navigate >");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
+// --- Screen 5: Charts & More ---
+static void create_screen_showcase3(lv_obj_t *parent)
+{
+    // Title
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, "Screen 5: Charts & More");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    // 1) Line Chart
+    lv_obj_t *chart = lv_chart_create(parent);
+    lv_obj_set_size(chart, 260, 150);
+    lv_obj_align(chart, LV_ALIGN_TOP_LEFT, 15, 50);
+    lv_chart_set_type(chart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(chart, 10);
+    lv_chart_set_range(chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+
+    lv_chart_series_t *ser1 = lv_chart_add_series(chart, lv_color_hex(0x2196F3), LV_CHART_AXIS_PRIMARY_Y);
+    lv_chart_series_t *ser2 = lv_chart_add_series(chart, lv_color_hex(0xFF5722), LV_CHART_AXIS_PRIMARY_Y);
+
+    static const int32_t data1[] = {10, 25, 40, 35, 60, 75, 50, 65, 80, 90};
+    static const int32_t data2[] = {50, 45, 30, 55, 40, 20, 35, 25, 15, 10};
+    for (int i = 0; i < 10; i++) {
+        lv_chart_set_next_value(chart, ser1, data1[i]);
+        lv_chart_set_next_value(chart, ser2, data2[i]);
+    }
+
+    lv_obj_t *chart_label = lv_label_create(parent);
+    lv_label_set_text(chart_label, "Temp (blue) / Humidity (red)");
+    lv_obj_set_style_text_font(chart_label, &lv_font_montserrat_12, 0);
+    lv_obj_align_to(chart_label, chart, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+
+    // 2) Scale (gauge)
+    lv_obj_t *scale = lv_scale_create(parent);
+    lv_obj_set_size(scale, 130, 130);
+    lv_obj_align(scale, LV_ALIGN_TOP_RIGHT, -20, 50);
+    lv_scale_set_mode(scale, LV_SCALE_MODE_ROUND_OUTER);
+    lv_scale_set_range(scale, 0, 100);
+    lv_scale_set_total_tick_count(scale, 21);
+    lv_scale_set_major_tick_every(scale, 5);
+    lv_scale_set_label_show(scale, true);
+
+    lv_obj_t *scale_label = lv_label_create(parent);
+    lv_label_set_text(scale_label, "RPM");
+    lv_obj_set_style_text_font(scale_label, &lv_font_montserrat_12, 0);
+    lv_obj_align_to(scale_label, scale, LV_ALIGN_OUT_BOTTOM_MID, 0, 5);
+
+    // 3) Button Matrix
+    static const char *btnm_map[] = {"1", "2", "3", "\n",
+                                      "4", "5", "6", "\n",
+                                      "7", "8", "9", "\n",
+                                      "*", "0", "#", ""};
+    lv_obj_t *btnm = lv_buttonmatrix_create(parent);
+    lv_buttonmatrix_set_map(btnm, btnm_map);
+    lv_obj_set_size(btnm, 200, 200);
+    lv_obj_align(btnm, LV_ALIGN_BOTTOM_LEFT, 15, -40);
+
+    // 4) Line drawing
+    static lv_point_precise_t line_points[] = {{0, 0}, {40, 60}, {80, 20}, {120, 80}, {160, 30}, {200, 50}};
+    lv_obj_t *line = lv_line_create(parent);
+    lv_line_set_points(line, line_points, 6);
+    lv_obj_set_style_line_width(line, 3, 0);
+    lv_obj_set_style_line_color(line, lv_color_hex(0x4CAF50), 0);
+    lv_obj_set_style_line_rounded(line, true, 0);
+    lv_obj_align(line, LV_ALIGN_BOTTOM_RIGHT, -30, -100);
+
+    lv_obj_t *line_label = lv_label_create(parent);
+    lv_label_set_text(line_label, "Signal waveform");
+    lv_obj_set_style_text_font(line_label, &lv_font_montserrat_12, 0);
+    lv_obj_align(line_label, LV_ALIGN_BOTTOM_RIGHT, -60, -75);
+
+    // Swipe hint
+    lv_obj_t *hint = lv_label_create(parent);
+    lv_label_set_text(hint, "< swipe to navigate >");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
+// --- Screen 6: Calendar, List, Menu, Msgbox ---
+static void msgbox_close_cb(lv_event_t *e)
+{
+    lv_obj_t *mbox = (lv_obj_t *)lv_event_get_user_data(e);
+    lv_msgbox_close(mbox);
+}
+
+static void show_msgbox_cb(lv_event_t *e)
+{
+    (void)e;
+    lv_obj_t *mbox = lv_msgbox_create(lv_screen_active());
+    lv_msgbox_add_title(mbox, "Info");
+    lv_msgbox_add_text(mbox, "This is a message box!\nIt can show alerts and confirmations.");
+    lv_obj_t *btn_ok = lv_msgbox_add_footer_button(mbox, "OK");
+    lv_obj_add_event_cb(btn_ok, msgbox_close_cb, LV_EVENT_CLICKED, mbox);
+    lv_obj_center(mbox);
+}
+
+static void create_screen_showcase4(lv_obj_t *parent)
+{
+    // Title
+    lv_obj_t *title = lv_label_create(parent);
+    lv_label_set_text(title, "Screen 6: Cal/List/Menu");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+
+    // 1) Calendar (top left)
+    lv_obj_t *cal = lv_calendar_create(parent);
+    lv_obj_set_size(cal, 230, 230);
+    lv_obj_align(cal, LV_ALIGN_TOP_LEFT, 10, 50);
+    lv_calendar_set_today_date(cal, 2026, 3, 10);
+    lv_calendar_set_showed_date(cal, 2026, 3);
+
+    static lv_calendar_date_t highlighted[] = {
+        {2026, 3, 10},
+        {2026, 3, 15},
+        {2026, 3, 20},
+    };
+    lv_calendar_set_highlighted_dates(cal, highlighted, 3);
+
+    // 2) List (top right)
+    lv_obj_t *list = lv_list_create(parent);
+    lv_obj_set_size(list, 210, 200);
+    lv_obj_align(list, LV_ALIGN_TOP_RIGHT, -10, 50);
+
+    lv_list_add_text(list, "Settings");
+    lv_list_add_button(list, LV_SYMBOL_WIFI, "WiFi");
+    lv_list_add_button(list, LV_SYMBOL_BLUETOOTH, "Bluetooth");
+    lv_list_add_button(list, LV_SYMBOL_GPS, "GPS");
+    lv_list_add_button(list, LV_SYMBOL_AUDIO, "Audio");
+    lv_list_add_text(list, "System");
+    lv_list_add_button(list, LV_SYMBOL_SETTINGS, "Config");
+    lv_list_add_button(list, LV_SYMBOL_POWER, "Power");
+    lv_list_add_button(list, LV_SYMBOL_USB, "USB");
+    lv_list_add_button(list, LV_SYMBOL_SD_CARD, "Storage");
+
+    // 3) Menu (bottom left)
+    lv_obj_t *menu = lv_menu_create(parent);
+    lv_obj_set_size(menu, 230, 170);
+    lv_obj_align(menu, LV_ALIGN_BOTTOM_LEFT, 10, -35);
+
+    // Menu sub-page: Display
+    lv_obj_t *sub_display = lv_menu_page_create(menu, "Display");
+    lv_obj_t *cont;
+
+    cont = lv_menu_cont_create(sub_display);
+    lv_obj_t *sw1 = lv_switch_create(cont);
+    lv_obj_t *lbl1 = lv_label_create(cont);
+    lv_label_set_text(lbl1, "Backlight");
+
+    cont = lv_menu_cont_create(sub_display);
+    lv_obj_t *sl1 = lv_slider_create(cont);
+    lv_obj_set_flex_grow(sl1, 1);
+    lv_slider_set_value(sl1, 70, LV_ANIM_OFF);
+
+    // Menu sub-page: Sound
+    lv_obj_t *sub_sound = lv_menu_page_create(menu, "Sound");
+
+    cont = lv_menu_cont_create(sub_sound);
+    lv_obj_t *sw2 = lv_switch_create(cont);
+    lv_obj_add_state(sw2, LV_STATE_CHECKED);
+    lv_obj_t *lbl2 = lv_label_create(cont);
+    lv_label_set_text(lbl2, "Mute");
+
+    cont = lv_menu_cont_create(sub_sound);
+    lv_obj_t *sl2 = lv_slider_create(cont);
+    lv_obj_set_flex_grow(sl2, 1);
+    lv_slider_set_value(sl2, 40, LV_ANIM_OFF);
+
+    // Menu main page
+    lv_obj_t *main_page = lv_menu_page_create(menu, NULL);
+
+    cont = lv_menu_cont_create(main_page);
+    lv_obj_t *icon1 = lv_label_create(cont);
+    lv_label_set_text(icon1, LV_SYMBOL_IMAGE "  Display");
+    lv_menu_set_load_page_event(menu, cont, sub_display);
+
+    cont = lv_menu_cont_create(main_page);
+    lv_obj_t *icon2 = lv_label_create(cont);
+    lv_label_set_text(icon2, LV_SYMBOL_AUDIO "  Sound");
+    lv_menu_set_load_page_event(menu, cont, sub_sound);
+
+    lv_menu_set_page(menu, main_page);
+
+    // 4) Msgbox trigger button (bottom right)
+    lv_obj_t *msgbox_btn = lv_button_create(parent);
+    lv_obj_set_size(msgbox_btn, 200, 50);
+    lv_obj_align(msgbox_btn, LV_ALIGN_BOTTOM_RIGHT, -15, -120);
+    lv_obj_set_style_bg_color(msgbox_btn, lv_color_hex(0xE91E63), 0);
+
+    lv_obj_t *msgbox_lbl = lv_label_create(msgbox_btn);
+    lv_label_set_text(msgbox_lbl, LV_SYMBOL_WARNING " Show Msgbox");
+    lv_obj_center(msgbox_lbl);
+
+    lv_obj_add_event_cb(msgbox_btn, show_msgbox_cb, LV_EVENT_CLICKED, NULL);
+
+    // Swipe hint
+    lv_obj_t *hint = lv_label_create(parent);
+    lv_label_set_text(hint, "< swipe to navigate >");
+    lv_obj_set_style_text_color(hint, lv_color_hex(0x888888), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -15);
+}
+
