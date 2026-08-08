@@ -9,20 +9,6 @@
 // beides dieselbe Funktion aus. Einziger Unterschied: im MQTT-Payload heisst
 // der Druckername "printer_name", ueber HTTP schlicht "name".
 
-// Farbangaben der API sind "#RRGGBBAA" (Auftraege) oder "RRGGBBAA" (AMS).
-// Beide Formen landen als 0xRRGGBB, Grau als Rueckfallwert.
-static inline uint32_t bambuddy_parse_hex_color(const char *value)
-{
-    if (!value) return 0x9E9E9E;
-    if (*value == '#') value++;
-    if (strlen(value) < 6) return 0x9E9E9E;
-
-    char buf[7];
-    memcpy(buf, value, 6);
-    buf[6] = '\0';
-    return (uint32_t)strtoul(buf, nullptr, 16);
-}
-
 // Text uebernehmen und dabei sauber kuerzen.
 //
 // strncpy schneidet auf Byte-Ebene ab. Namen aus der API enthalten aber
@@ -66,11 +52,16 @@ static inline uint8_t bambuddy_hex_nibble(char c)
     return 0;
 }
 
+// Farbangaben der API kommen als "#RRGGBBAA" (Auftraege) oder "RRGGBBAA"
+// (AMS-Faecher). Beide Formen landen als 0xRRGGBB; ohne brauchbaren Wert
+// ein neutrales Grau.
+static constexpr uint32_t BB_COLOR_FALLBACK = 0x546E7A;
+
 static inline uint32_t bambuddy_parse_color(const char *text)
 {
-    if (!text) return 0x546E7A;
+    if (!text) return BB_COLOR_FALLBACK;
     if (text[0] == '#') text++;
-    if (strlen(text) < 6) return 0x546E7A;
+    if (strlen(text) < 6) return BB_COLOR_FALLBACK;
 
     uint32_t color = 0;
     for (int i = 0; i < 6; i++) {

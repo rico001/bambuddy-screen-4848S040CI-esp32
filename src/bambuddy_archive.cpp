@@ -107,7 +107,7 @@ static void fetch_page()
         it.print_seconds = obj["print_time_seconds"] | 0;
         it.grams = obj["filament_used_grams"] | 0.0f;
         strncpy(it.filament, obj["filament_type"] | "", sizeof(it.filament) - 1);
-        it.color = bambuddy_parse_hex_color(obj["filament_color"] | "");
+        it.color = bambuddy_parse_color(obj["filament_color"] | "");
         strncpy(it.status, obj["status"] | "", sizeof(it.status) - 1);
         it.run_count = obj["run_count"] | 0;
         count++;

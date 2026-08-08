@@ -503,7 +503,7 @@ static void edit_overlay_create()
     lv_obj_t *cancel_btn = lv_button_create(edit_overlay);
     lv_obj_set_size(cancel_btn, 150, 46);
     lv_obj_align(cancel_btn, LV_ALIGN_TOP_LEFT, PAD, 146);
-    lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(0x546E7A), 0);
+    lv_obj_set_style_bg_color(cancel_btn, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(cancel_btn, edit_cancel_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t *cancel_lbl = lv_label_create(cancel_btn);
     lv_label_set_text(cancel_lbl, LV_SYMBOL_CLOSE "  Abbrechen");
