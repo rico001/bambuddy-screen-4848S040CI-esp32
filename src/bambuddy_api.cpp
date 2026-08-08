@@ -20,6 +20,7 @@
 #include "bambuddy_queue.h"
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
+#include "bambuddy_version.h"
 #include "settings_screen.h"
 #include "ui_watch.h"
 
@@ -467,6 +468,13 @@ static void api_task(void *)
                 fetch_ams_status();
             }
         }
+
+        // Fassung der Instanz — bewusst ausserhalb der Konfigurationspruefung
+        // oben: Der Ersatzweg /updates/version braucht keinen API-Key, und
+        // gerade wenn der Schluessel fehlt, will man wissen, was drueben
+        // laeuft. Der Abruf hat eigene Sperren und meldet sich von sich aus
+        // nur alle paar Stunden.
+        bambuddy_version_update();
 
         // Bei offenem Kamera-Vollbild oefter aufwachen — sonst haenge der
         // 3-Sekunden-Takt am Leerlaufintervall von bis zu 30 Sekunden.
