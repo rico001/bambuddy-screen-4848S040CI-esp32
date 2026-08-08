@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "ui_layout.h"
+#include "ui_theme.h"
 
 // ============================================================
 // Layout & Farben
@@ -21,11 +22,6 @@ static constexpr int VIEW_H = CONTENT_H - CONTENT_Y - PAD;
 static constexpr int KEYBOARD_H = 190;
 static constexpr int ROW_H = 52; // Touch-Ziel: nie unter 44px
 
-static constexpr uint32_t COL_ACCENT = 0x2196F3;
-static constexpr uint32_t COL_OK = 0x4CAF50;
-static constexpr uint32_t COL_WARN = 0xFFB300;
-static constexpr uint32_t COL_ERR = 0xE53935;
-static constexpr uint32_t COL_MUTED = 0x9E9E9E;
 
 // ============================================================
 // State Machine
@@ -41,6 +37,8 @@ enum wifi_state_t {
 };
 
 static wifi_state_t state = WS_IDLE;
+static bool service_started = false;
+static bool ui_ready = false;
 
 // ============================================================
 // UI-Objekte
@@ -204,6 +202,7 @@ static const char *disconnect_reason_text(uint8_t reason)
 
 static void set_card(uint32_t color, const char *icon, const char *title, const char *sub)
 {
+    if (!ui_ready) return;
     lv_label_set_text(card_icon, icon);
     lv_obj_set_style_text_color(card_icon, lv_color_hex(color), 0);
     lv_label_set_text(card_title, title);
@@ -233,6 +232,7 @@ static void stop_action_timers()
 
 static void show_only(lv_obj_t *view)
 {
+    if (!ui_ready) return;
     lv_obj_t *views[] = {view_list, view_password, view_connected, view_focus};
     for (lv_obj_t *v : views) {
         if (v == view) {
@@ -252,6 +252,13 @@ static void show_only(lv_obj_t *view)
 static void enter_state(wifi_state_t new_state)
 {
     state = new_state;
+
+    if (state == WS_CONNECTED) {
+        strncpy(connected_ssid, selected_ssid, sizeof(connected_ssid) - 1);
+        connected_ssid[sizeof(connected_ssid) - 1] = '\0';
+    }
+
+    if (!ui_ready) return;
 
     // Scan-Button ist immer da (kein Layout-Springen) — nur deaktiviert, wenn sinnlos.
     const bool scan_allowed = (state == WS_IDLE || state == WS_LIST ||
@@ -312,8 +319,6 @@ static void enter_state(wifi_state_t new_state)
 
     case WS_CONNECTED:
         show_only(view_connected);
-        strncpy(connected_ssid, selected_ssid, sizeof(connected_ssid) - 1);
-        connected_ssid[sizeof(connected_ssid) - 1] = '\0';
         lv_label_set_text(conn_ssid_lbl, connected_ssid);
         lv_label_set_text_fmt(conn_ip_lbl, LV_SYMBOL_HOME "  %s", WiFi.localIP().toString().c_str());
         lv_label_set_text_fmt(conn_rssi_lbl, LV_SYMBOL_WIFI "  %d %%  (%d dBm)",
@@ -362,9 +367,11 @@ static void connect_failed(const char *reason)
     // Manueller Versuch: zurueck ins Passwortfeld, Eingabe bleibt erhalten,
     // damit der User nur den Tippfehler korrigieren muss.
     enter_state(WS_PASSWORD);
-    lv_textarea_set_text(pw_ta, pending_password);
-    lv_label_set_text_fmt(pw_error_lbl, LV_SYMBOL_WARNING "  %s", reason);
-    lv_obj_remove_flag(pw_error_lbl, LV_OBJ_FLAG_HIDDEN);
+    if (ui_ready) {
+        lv_textarea_set_text(pw_ta, pending_password);
+        lv_label_set_text_fmt(pw_error_lbl, LV_SYMBOL_WARNING "  %s", reason);
+        lv_obj_remove_flag(pw_error_lbl, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 static void check_connection_cb(lv_timer_t *)
@@ -422,7 +429,9 @@ static void retry_tick_cb(lv_timer_t *)
         start_connect(true);
         return;
     }
-    lv_label_set_text_fmt(focus_sub, "Neuer Versuch in %d s", retry_seconds_left);
+    if (ui_ready) {
+        lv_label_set_text_fmt(focus_sub, "Neuer Versuch in %d s", retry_seconds_left);
+    }
 }
 
 static void schedule_retry()
@@ -455,8 +464,10 @@ static void watchdog_cb(lv_timer_t *)
         return;
     }
 
-    lv_label_set_text_fmt(conn_rssi_lbl, LV_SYMBOL_WIFI "  %d %%  (%d dBm)",
-                          rssi_to_percent((int8_t)WiFi.RSSI()), (int)WiFi.RSSI());
+    if (ui_ready) {
+        lv_label_set_text_fmt(conn_rssi_lbl, LV_SYMBOL_WIFI "  %d %%  (%d dBm)",
+                              rssi_to_percent((int8_t)WiFi.RSSI()), (int)WiFi.RSSI());
+    }
 }
 
 // ============================================================
@@ -599,17 +610,21 @@ static void scan_poll_cb(lv_timer_t *timer)
     if (n == WIFI_SCAN_FAILED || n == 0) {
         WiFi.scanDelete();
         enter_state(WS_IDLE);
-        lv_label_set_text(list_hint, "Keine Netzwerke gefunden.\nNaeher an den Router gehen und erneut scannen.");
-        set_card(COL_WARN, LV_SYMBOL_WARNING, "Nichts gefunden", "Scan lieferte kein Ergebnis");
+        if (ui_ready) {
+            lv_label_set_text(list_hint, "Keine Netzwerke gefunden.\nNaeher an den Router gehen und erneut scannen.");
+            set_card(COL_WARN, LV_SYMBOL_WARNING, "Nichts gefunden", "Scan lieferte kein Ergebnis");
+        }
         return;
     }
 
     collect_scan_results(n);
     WiFi.scanDelete();
 
-    lv_obj_clean(net_list);
-    for (int i = 0; i < scan_count; i++) build_network_row(i);
-    lv_obj_scroll_to_y(net_list, 0, LV_ANIM_OFF);
+    if (ui_ready) {
+        lv_obj_clean(net_list);
+        for (int i = 0; i < scan_count; i++) build_network_row(i);
+        lv_obj_scroll_to_y(net_list, 0, LV_ANIM_OFF);
+    }
 
     enter_state(WS_LIST);
 }
@@ -617,7 +632,7 @@ static void scan_poll_cb(lv_timer_t *timer)
 static void start_scan()
 {
     stop_action_timers();
-    lv_obj_clean(net_list);
+    if (ui_ready) lv_obj_clean(net_list);
     scan_count = 0;
     enter_state(WS_SCANNING);
 
@@ -765,7 +780,7 @@ static void build_header(lv_obj_t *parent)
     lv_obj_t *title = lv_label_create(parent);
     lv_label_set_text(title, "WLAN");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 52, 14);
 
     scan_btn = make_button(parent, LV_SYMBOL_REFRESH "  Scannen", COL_ACCENT,
                            scan_btn_cb, &scan_btn_lbl);
@@ -969,10 +984,10 @@ static void build_focus_view(lv_obj_t *parent)
 // Public API
 // ============================================================
 
-void wifi_screen_create(lv_obj_t *parent)
+void wifi_service_start()
 {
-    root = parent;
-    lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+    if (service_started) return;
+    service_started = true;
 
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(false); // Reconnect steuern wir selbst (sichtbar fuer den User)
@@ -980,19 +995,12 @@ void wifi_screen_create(lv_obj_t *parent)
     WiFi.onEvent(wifi_event_cb, ARDUINO_EVENT_WIFI_STA_CONNECTED);
     WiFi.disconnect();
 
-    build_header(root);
-    build_status_card(root);
-    build_list_view(root);
-    build_password_view(root);
-    build_connected_view(root);
-    build_focus_view(root);
-
     // Watchdog laeuft dauerhaft und wird nie geloescht.
     watchdog_timer = lv_timer_create(watchdog_cb, 2000, nullptr);
     lv_timer_set_repeat_count(watchdog_timer, -1);
 
-    // Startverhalten: gespeichertes Netz -> direkt verbinden,
-    // sonst sofort scannen. Der User muss nichts antippen, um anzufangen.
+    // Ohne gespeicherte Zugangsdaten bleibt der Dienst ruhig. Ein Scan ist
+    // erst sinnvoll, wenn die WLAN-Ansicht geoeffnet wird.
     char ssid[SSID_LEN], pw[PW_LEN];
     if (load_credentials(ssid, sizeof(ssid), pw, sizeof(pw))) {
         strncpy(selected_ssid, ssid, sizeof(selected_ssid) - 1);
@@ -1003,8 +1011,77 @@ void wifi_screen_create(lv_obj_t *parent)
         start_connect(true);
     } else {
         enter_state(WS_IDLE);
-        start_scan();
     }
+}
+
+void wifi_screen_create(lv_obj_t *parent)
+{
+    wifi_service_start();
+    if (ui_ready) return;
+
+    root = parent;
+    lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
+
+    build_header(root);
+    build_status_card(root);
+    build_list_view(root);
+    build_password_view(root);
+    build_connected_view(root);
+    build_focus_view(root);
+    ui_ready = true;
+
+    if (state == WS_LIST && scan_count > 0) {
+        for (int i = 0; i < scan_count; i++) build_network_row(i);
+    }
+
+    if (state == WS_IDLE) {
+        start_scan();
+    } else {
+        enter_state(state);
+    }
+}
+
+void wifi_screen_destroy()
+{
+    if (!ui_ready) return;
+
+    // Ein Scan dient nur der Ansicht. Verbindungs- und Reconnect-Timer
+    // bleiben dagegen als Teil des Hintergrunddienstes aktiv.
+    if (state == WS_SCANNING) {
+        stop_timer(&scan_timer);
+        WiFi.scanDelete();
+        state = WS_IDLE;
+    }
+    if (state == WS_CONNECTING) connect_is_auto = true;
+
+    ui_ready = false;
+    root = nullptr;
+    scan_btn = nullptr;
+    scan_btn_lbl = nullptr;
+    card = nullptr;
+    card_icon = nullptr;
+    card_title = nullptr;
+    card_sub = nullptr;
+    view_list = nullptr;
+    net_list = nullptr;
+    list_hint = nullptr;
+    list_spinner = nullptr;
+    view_password = nullptr;
+    pw_ssid_lbl = nullptr;
+    pw_ta = nullptr;
+    pw_eye_lbl = nullptr;
+    pw_error_lbl = nullptr;
+    keyboard = nullptr;
+    view_connected = nullptr;
+    conn_ssid_lbl = nullptr;
+    conn_ip_lbl = nullptr;
+    conn_rssi_lbl = nullptr;
+    view_focus = nullptr;
+    focus_spinner = nullptr;
+    focus_title = nullptr;
+    focus_sub = nullptr;
+    focus_primary_btn = nullptr;
+    focus_primary_lbl = nullptr;
 }
 
 bool wifi_screen_is_connected()

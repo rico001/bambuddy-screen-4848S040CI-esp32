@@ -2,8 +2,11 @@
 #include <esp32_smartdisplay.h>
 #include <esp_heap_caps.h>
 
+#include "ams_screen.h"
 #include "bambuddy_api.h"
+#include "archive_screen.h"
 #include "bambuddy_config.h"
+#include "general_screen.h"
 #include "queue_screen.h"
 #include "settings_screen.h"
 #include "status_bar.h"
@@ -13,12 +16,22 @@
 
 // --- Globals ---
 static lv_obj_t *tileview;
+static lv_obj_t *ams_tile;
 static lv_obj_t *queue_tile;
+static lv_obj_t *archive_tile;
+static lv_obj_t *general_tile;
 
 // Kachelwechsel: nur der sichtbare Screen soll Daten holen
 static void tile_changed_cb(lv_event_t *)
 {
-    queue_screen_set_visible(lv_tileview_get_tile_active(tileview) == queue_tile);
+    const bool ams_visible = lv_tileview_get_tile_active(tileview) == ams_tile;
+    const bool queue_visible = lv_tileview_get_tile_active(tileview) == queue_tile;
+    const bool archive_visible = lv_tileview_get_tile_active(tileview) == archive_tile;
+    const bool general_visible = lv_tileview_get_tile_active(tileview) == general_tile;
+    ams_screen_set_visible(ams_visible);
+    queue_screen_set_visible(queue_visible);
+    archive_screen_set_visible(archive_visible);
+    general_screen_set_visible(general_visible);
 }
 
 // --- Setup & Loop ---
@@ -61,21 +74,29 @@ void setup()
     lv_obj_t *tile1 = lv_tileview_add_tile(tileview, 0, 0, (lv_dir_t)LV_DIR_RIGHT);
     lv_obj_t *tile2 = lv_tileview_add_tile(tileview, 1, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
     lv_obj_t *tile3 = lv_tileview_add_tile(tileview, 2, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
-    lv_obj_t *tile4 = lv_tileview_add_tile(tileview, 3, 0, (lv_dir_t)LV_DIR_LEFT);
+    lv_obj_t *tile4 = lv_tileview_add_tile(tileview, 3, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
+    lv_obj_t *tile5 = lv_tileview_add_tile(tileview, 4, 0, (lv_dir_t)LV_DIR_LEFT);
 
-    // Startkachel ist der Druckerstatus — das ist der Grund, warum das
-    // Geraet an der Wand haengt. Danach die Warteschlange, dann Technik.
-    status_screen_create(tile1);
-    queue_screen_create(tile2);
-    wifi_screen_create(tile3);
-    settings_screen_create(tile4);
+    // AMS liegt links vom Druckerstatus. Der Status bleibt die Startkachel,
+    // rechts folgen Warteschlange, Archiv und System.
+    ams_screen_create(tile1);
+    status_screen_create(tile2);
+    queue_screen_create(tile3);
+    archive_screen_create(tile4);
+    general_screen_create(tile5);
+    lv_tileview_set_tile(tileview, tile2, LV_ANIM_OFF);
 
-    // Die Warteschlange fragt nur ab, wenn ihre Kachel sichtbar ist
-    queue_tile = tile2;
+    // Daten-Screens und die dynamische Systemansicht bekommen ihre
+    // Sichtbarkeit ueber den Tilewechsel gemeldet.
+    ams_tile = tile1;
+    queue_tile = tile3;
+    archive_tile = tile4;
+    general_tile = tile5;
     lv_obj_add_event_cb(tileview, tile_changed_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     log_memory("Screens gebaut");
 
+    wifi_service_start();
     bambuddy_api_start();
 
     log_memory("Netzwerk-Task gestartet");
@@ -92,4 +113,3 @@ void loop()
     // WiFi-Stack Pakete verpassen, wenn LVGL-Rendering Core 1 blockiert.
     delay(1);
 }
-

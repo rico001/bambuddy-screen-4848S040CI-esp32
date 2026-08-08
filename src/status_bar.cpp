@@ -8,12 +8,9 @@
 #include "bambuddy_config.h"
 #include "settings_screen.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 #include "ui_util.h"
 
-static constexpr uint32_t COL_OK = 0x4CAF50;
-static constexpr uint32_t COL_WARN = 0xFFB300;
-static constexpr uint32_t COL_ERR = 0xE53935;
-static constexpr uint32_t COL_MUTED = 0x9E9E9E;
 
 // Meldet der Netzwerk-Task laenger nichts, haengt er — das darf nicht als
 // "alles gut" durchgehen.

@@ -9,6 +9,7 @@
 
 #include "bambuddy_config.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 
 // ============================================================
 // Layout
@@ -19,10 +20,6 @@ static constexpr int ROW_H = 66;        // Touch-Ziel inkl. Untertitel
 static constexpr int SLIDER_ROW_H = 96; // Titel oben, Slider darunter
 static constexpr int EDIT_KB_H = 220;
 
-static constexpr uint32_t COL_MUTED = 0x9E9E9E;
-static constexpr uint32_t COL_WARN = 0xFFB300;
-static constexpr uint32_t COL_OK = 0x4CAF50;
-static constexpr uint32_t COL_ACCENT = 0x2196F3;
 
 // ============================================================
 // Auswahllisten
@@ -508,6 +505,15 @@ static void time_tick_cb(lv_timer_t *)
     }
 }
 
+static void start_time_service()
+{
+    if (!time_timer) {
+        time_timer = lv_timer_create(time_tick_cb, 1000, nullptr);
+        lv_timer_set_repeat_count(time_timer, -1);
+    }
+    time_tick_cb(nullptr);
+}
+
 // ============================================================
 // Callbacks
 // ============================================================
@@ -581,6 +587,9 @@ void settings_apply_saved()
     apply_theme();
     apply_brightness();
     apply_timezone();
+    // Die Uhr gehoert zur globalen Statusleiste und darf deshalb nicht vom
+    // spaeter nur bei Bedarf erzeugten Einstellungs-Screen abhaengen.
+    start_time_service();
 }
 
 void settings_screen_create(lv_obj_t *parent)
@@ -590,7 +599,7 @@ void settings_screen_create(lv_obj_t *parent)
     lv_obj_t *title = lv_label_create(parent);
     lv_label_set_text(title, LV_SYMBOL_SETTINGS "  Einstellungen");
     lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 52, 14);
 
     // Scrollbare Liste — neue Einstellungen haengen sich unten an,
     // ohne dass Positionen angepasst werden muessen.
@@ -688,11 +697,30 @@ void settings_screen_create(lv_obj_t *parent)
     // Untertitel dieser Zeile dient als Sync-Statusanzeige
     row_create(LV_SYMBOL_BELL, "Uhrzeit", "", &time_row_lbl);
 
-    if (!time_timer) {
-        time_timer = lv_timer_create(time_tick_cb, 1000, nullptr);
-        lv_timer_set_repeat_count(time_timer, -1);
-    }
     time_tick_cb(nullptr);
+}
+
+void settings_screen_destroy()
+{
+    if (edit_overlay) {
+        lv_obj_delete(edit_overlay);
+        edit_overlay = nullptr;
+    }
+
+    settings_list = nullptr;
+    dark_switch = nullptr;
+    tls_switch = nullptr;
+    poll_dd = nullptr;
+    tz_dd = nullptr;
+    brightness_slider = nullptr;
+    brightness_value_lbl = nullptr;
+    time_row_lbl = nullptr;
+    edit_title = nullptr;
+    edit_ta = nullptr;
+    edit_kb = nullptr;
+    edit_row_idx = -1;
+    memset(text_rows, 0, sizeof(text_rows));
+    text_row_count = 0;
 }
 
 bool settings_dark_mode() { return dark_mode; }

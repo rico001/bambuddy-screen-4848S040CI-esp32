@@ -10,6 +10,7 @@ void settings_apply_saved();
 
 // Baut den Einstellungs-Screen auf dem gegebenen Parent (z.B. Tileview-Tile).
 void settings_screen_create(lv_obj_t *parent);
+void settings_screen_destroy();
 
 // --- Werte fuer andere Module --------------------------------------------
 bool settings_dark_mode();
