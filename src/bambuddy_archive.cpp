@@ -125,6 +125,24 @@ static void fetch_page()
     last_error_ms = 0;
 }
 
+// Fehlermeldung des Servers mitlesen. Bambuddy schickt bei abgelehnten
+// Anfragen ein {"detail": "..."} mit — das gehoert in die Anzeige, statt es
+// durch ein pauschales "fehlgeschlagen" zu ersetzen. Genau dieser Text
+// haette den entfernten reprint-Endpunkt sofort erklaert.
+static void read_error_detail(HTTPClient &http, char *out, size_t out_len)
+{
+    if (out_len) out[0] = '\0';
+
+    JsonDocument filter;
+    filter["detail"] = true;
+
+    JsonDocument doc;
+    if (deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter))) return;
+
+    const char *detail = doc["detail"] | "";
+    if (detail[0]) bambuddy_copy_field(out, out_len, detail);
+}
+
 static int send_code(const char *method, const char *url)
 {
     BambuddyHttp &session = bambuddy_http_shared();
@@ -133,11 +151,16 @@ static int send_code(const char *method, const char *url)
     HTTPClient &http = session.http();
 
     const int code = http.sendRequest(method, (uint8_t *)nullptr, 0);
-    session.end(false);
 
     if (code < 200 || code >= 300) {
-        Serial.printf("[Archiv] %s %s -> HTTP %d\n", method, url, code);
+        char detail[96];
+        read_error_detail(http, detail, sizeof(detail));
+        Serial.printf("[Archiv] %s %s -> HTTP %d%s%s\n", method, url, code,
+                      detail[0] ? " | " : "", detail);
+        if (detail[0]) set_message(detail);
     }
+
+    session.end(false);
     return code;
 }
 
@@ -152,6 +175,56 @@ static bool post(const char *url)
     return send("POST", url);
 }
 
+// Legt einen Warteschlangeneintrag fuer das Archiv an und gibt dessen
+// Kennung zurueck (0 = fehlgeschlagen).
+//
+// Der frueher benutzte Weg /archives/{id}/reprint gibt es nicht mehr; der
+// Server antwortet darauf mit 410 und dem Hinweis, stattdessen einen
+// Warteschlangeneintrag anzulegen. manual_start sorgt dafuer, dass er nicht
+// von selbst losfaehrt — gestartet wird er gleich darauf gezielt, damit die
+// Rueckfrage zur Druckplatte ihren Sinn behaelt.
+static int32_t enqueue_archive(int32_t archive_id)
+{
+    BambuddyHttp &session = bambuddy_http_shared();
+    const char *url = bambuddy_url("/queue/");
+    if (!session.begin(url, true)) return 0;
+
+    HTTPClient &http = session.http();
+    http.addHeader("Content-Type", "application/json");
+
+    char body[128];
+    snprintf(body, sizeof(body),
+             "{\"printer_id\":%d,\"archive_id\":%d,\"manual_start\":true}",
+             bambuddy_printer_id(), (int)archive_id);
+
+    const int code = http.POST(body);
+
+    if (code < 200 || code >= 300) {
+        char detail[96];
+        read_error_detail(http, detail, sizeof(detail));
+        Serial.printf("[Archiv] Einreihen -> HTTP %d%s%s\n", code,
+                      detail[0] ? " | " : "", detail);
+        set_message(detail[0] ? detail : "Einreihen fehlgeschlagen");
+        session.end(false);
+        return 0;
+    }
+
+    JsonDocument filter;
+    filter["id"] = true;
+
+    JsonDocument doc;
+    const DeserializationError err =
+        deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+    session.end(false);
+
+    if (err) {
+        set_message("Antwort auf das Einreihen nicht lesbar");
+        return 0;
+    }
+
+    return doc["id"] | 0;
+}
+
 static void do_reprint(int32_t archive_id, bool clear_plate)
 {
     if (clear_plate) {
@@ -159,16 +232,20 @@ static void do_reprint(int32_t archive_id, bool clear_plate)
         if (!post(plate_url)) Serial.println("[Archiv] clear-plate fehlgeschlagen");
     }
 
-    char url[224];
-    snprintf(url, sizeof(url), "%s",
-             bambuddy_url("/archives/%d/reprint?printer_id=%d",
-                          (int)archive_id, bambuddy_printer_id()));
+    const int32_t item_id = enqueue_archive(archive_id);
+    if (item_id == 0) return; // Meldung steht schon
+
+    char url[192];
+    snprintf(url, sizeof(url), "%s", bambuddy_url("/queue/%d/start", (int)item_id));
 
     if (post(url)) {
         set_message("Archivdruck gestartet");
-        Serial.printf("[Archiv] Auftrag %d gestartet\n", (int)archive_id);
+        Serial.printf("[Archiv] Archiv %d als Auftrag %d gestartet\n",
+                      (int)archive_id, (int)item_id);
     } else {
-        set_message("Archivdruck fehlgeschlagen");
+        // Eingereiht ist er trotzdem — das soll die Meldung sagen, sonst
+        // legt man ihn versehentlich ein zweites Mal an.
+        set_message("Eingereiht, Start fehlgeschlagen");
     }
 }
 
