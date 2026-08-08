@@ -252,6 +252,17 @@ static void wake_cb(lv_event_t *)
     set_screen_level(SCREEN_ON);
 }
 
+void settings_screen_wake()
+{
+    // Nicht nur einschalten, sondern auch die Untaetigkeitsuhr anstossen:
+    // Ohne das haette der Schlafwaechter 500 ms spaeter wieder abgedunkelt,
+    // weil er allein die Zeit seit der letzten Beruehrung kennt. Zugleich
+    // laeuft die Abschaltzeit dadurch neu — der Bildschirm bleibt so lange
+    // an, wie er es nach einer Beruehrung auch bliebe.
+    lv_display_trigger_activity(nullptr);
+    set_screen_level(SCREEN_ON);
+}
+
 static void sleep_check_cb(lv_timer_t *)
 {
     const uint32_t timeout = screen_off_ms[screen_off_idx];
