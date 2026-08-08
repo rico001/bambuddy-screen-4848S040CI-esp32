@@ -4,7 +4,7 @@ Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instan
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
 **Getestet gegen Bambuddy-Version: v1.2.5.2**
-**Letzte Prüfung: 2026-08-08 — unverändert**
+**Letzte Prüfung: 2026-08-08, 14:02 Uhr — unverändert**
 
 ---
 
@@ -91,8 +91,21 @@ Endpunkte, Parameter und Feldnamen anpassen. Bei entfernten Endpunkten nach
 dem vorgesehenen Ersatz suchen: Bambuddy liefert ihn oft in der
 Fehlerantwort mit (siehe unten).
 
-**5. Version oben in dieser Datei hochsetzen** und die Änderungen kurz
-zusammenfassen.
+**5. Kopf dieser Datei nachführen — immer, auch wenn nichts zu tun war.**
+
+```markdown
+**Getestet gegen Bambuddy-Version: v1.2.5.2**
+**Letzte Prüfung: 2026-08-08, 14:02 Uhr — unverändert**
+```
+
+- `Getestet gegen …` nur ändern, wenn tatsächlich Code angepasst wurde.
+- `Letzte Prüfung` **bei jedem Durchlauf** auf Datum **und Uhrzeit** setzen
+  (`date '+%Y-%m-%d, %H:%M'`), dahinter das Ergebnis: `unverändert` oder eine
+  knappe Zusammenfassung der Anpassungen.
+
+Ohne diesen Zeitstempel weiß beim nächsten Mal niemand, ob die Prüfung von
+gestern oder von vor einem halben Jahr stammt — und damit auch nicht, wie
+viel Vertrauen die Aussage „passt noch" verdient.
 
 ---
 

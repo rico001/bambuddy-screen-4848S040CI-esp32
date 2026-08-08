@@ -37,7 +37,7 @@ static int shown_count = 0;
 // Vollbild-Vorschau des Modells
 static ui_image_view_t preview_view;
 
-static constexpr uint32_t START_LOCK_MS = 45000;
+static constexpr uint32_t START_LOCK_MS = 25000;
 static int32_t starting_id = 0;
 static uint32_t starting_ms = 0;
 
