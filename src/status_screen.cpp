@@ -146,9 +146,7 @@ static void format_remaining(int32_t minutes, char *out, size_t out_len)
     }
 }
 
-// Vier geordnete Stufen an einem Knopf: Tippen schaltet weiter, die
-// Beschriftung zeigt die aktuelle. Eine Auswahlliste braeuchte zwei
-// Beruehrungen und eine eigene Zeile — dafuer ist der Platz zu schade.
+// Der Knopf traegt die aktuelle Stufe, angetippt oeffnet er die Auswahl.
 static const char *speed_name(int32_t level)
 {
     switch (level) {
@@ -465,19 +463,26 @@ static void stop_cb(lv_event_t *)
                stop_confirmed, nullptr);
 }
 
+static void speed_chosen(int index, void *)
+{
+    const int level = index + 1; // Auswahl 0..3 -> Stufe 1..4
+
+    // Sofort mitziehen, damit der Knopf nicht bis zur naechsten Antwort die
+    // alte Stufe zeigt. Der naechste Status korrigiert es, falls der
+    // Drucker den Wechsel ablehnt.
+    status.speed_level = level;
+    ui_set_text(speed_btn_lbl, speed_name(level));
+
+    bambuddy_api_send_speed(level);
+}
+
 static void speed_cb(lv_event_t *)
 {
-    const int32_t current = (status.speed_level >= 1 && status.speed_level <= 4)
-                                ? status.speed_level : 2;
-    const int next = (current % 4) + 1;
+    static const char *const options[] = {"Leise", "Normal", "Sport", "Turbo"};
+    const int current = (status.speed_level >= 1 && status.speed_level <= 4)
+                            ? status.speed_level - 1 : -1;
 
-    // Sofort mitziehen, damit der Knopf nicht bis zur naechsten Antwort
-    // die alte Stufe zeigt. Der naechste Status korrigiert es, falls der
-    // Drucker den Wechsel ablehnt.
-    status.speed_level = next;
-    ui_set_text(speed_btn_lbl, speed_name(next));
-
-    bambuddy_api_send_speed(next);
+    ui_choice("Druckgeschwindigkeit", options, 4, current, speed_chosen, nullptr);
 }
 
 static void pause_cb(lv_event_t *)
