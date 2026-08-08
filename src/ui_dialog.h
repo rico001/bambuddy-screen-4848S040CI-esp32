@@ -20,7 +20,16 @@ void ui_confirm(const char *title, const char *text,
                 const char *ok_label, uint32_t ok_color,
                 ui_confirm_cb_t on_ok, void *user_data);
 
-// Steht gerade eine Rueckfrage offen? (Doppelte Dialoge vermeiden.)
+// Auswahl aus mehreren Moeglichkeiten, untereinander als volle Zeilen.
+// Die aktuelle Wahl ist hervorgehoben; current ist ihr Index oder -1.
+// on_choose bekommt den gewaehlten Index; beim Abbrechen passiert nichts.
+typedef void (*ui_choice_cb_t)(int index, void *user_data);
+
+void ui_choice(const char *title, const char *const *options, int count,
+               int current, ui_choice_cb_t on_choose, void *user_data);
+
+// Steht gerade ein Dialog offen? (Doppelte Dialoge vermeiden — und die
+// Listen bauen sich nicht um, solange einer offen ist.)
 bool ui_confirm_is_open();
 
 // Offene Rueckfrage schliessen, ohne on_ok zu rufen — etwa wenn der
