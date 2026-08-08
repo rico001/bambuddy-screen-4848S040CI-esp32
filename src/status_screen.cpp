@@ -25,17 +25,17 @@ static constexpr int CONTENT_W = SCREEN_W - 2 * PAD; // 456
 
 // Senkrechtes Budget (CONTENT_H = 454, siehe ui_layout.h):
 //   Kopfzeile        0 ..  46
-//   Auftragskarte   46 .. 282
-//   Temperaturen   290 .. 366
-//   Steuerung      374 .. 422
-//   Fusszeile      ab 434
+//   Auftragskarte   46 .. 258
+//   Temperaturen   266 .. 348
+//   Steuerung      356 .. 408
+//   Fusszeile      unten
 static constexpr int JOB_Y = 46;
-static constexpr int JOB_H = 236;
-static constexpr int TEMP_Y = 290;
-static constexpr int TEMP_H = 76;
+static constexpr int JOB_H = 212;
+static constexpr int TEMP_Y = 266;
+static constexpr int TEMP_H = 82;
 static constexpr int TEMP_W = (CONTENT_W - 12) / 2;
-static constexpr int CTRL_Y = 374;
-static constexpr int CTRL_H = 48;
+static constexpr int CTRL_Y = 356;
+static constexpr int CTRL_H = 52;
 static constexpr int CTRL_GAP = 8;
 static constexpr int CTRL_W = (CONTENT_W - 4 * CTRL_GAP) / 5;
 
@@ -60,9 +60,7 @@ static lv_obj_t *remaining_lbl;
 static lv_obj_t *queue_lbl;
 
 static lv_obj_t *nozzle_value_lbl;
-static lv_obj_t *nozzle_target_lbl;
 static lv_obj_t *bed_value_lbl;
-static lv_obj_t *bed_target_lbl;
 
 static lv_obj_t *pause_btn;
 static lv_obj_t *resume_btn;
@@ -159,6 +157,15 @@ static const char *speed_name(int32_t level)
     case 3:  return "Sport";
     case 4:  return "Turbo";
     default: return "Tempo";
+    }
+}
+
+static void set_temperature(lv_obj_t *label, float value, float target)
+{
+    if (target > 0.5f) {
+        ui_set_text_fmt(label, "%d / %d C", (int)(value + 0.5f), (int)(target + 0.5f));
+    } else {
+        ui_set_text_fmt(label, "%d C", (int)(value + 0.5f));
     }
 }
 
@@ -318,19 +325,11 @@ static void update_status_fields()
         ui_set_text(queue_lbl, "");
     }
 
-    ui_set_text_fmt(nozzle_value_lbl, "%d C", (int)(status.nozzle + 0.5f));
-    if (status.nozzle_target > 0.5f) {
-        ui_set_text_fmt(nozzle_target_lbl, "Ziel %d C", (int)(status.nozzle_target + 0.5f));
-    } else {
-        ui_set_text(nozzle_target_lbl, "aus");
-    }
-
-    ui_set_text_fmt(bed_value_lbl, "%d C", (int)(status.bed + 0.5f));
-    if (status.bed_target > 0.5f) {
-        ui_set_text_fmt(bed_target_lbl, "Ziel %d C", (int)(status.bed_target + 0.5f));
-    } else {
-        ui_set_text(bed_target_lbl, "aus");
-    }
+    // Ist und Soll in einer Zeile: "22 / 60 C" waehrend geheizt wird,
+    // sonst nur der Istwert. Ein Zielwert von 0 bedeutet, dass die Heizung
+    // aus ist — das braucht keine eigene Zeile, das Fehlen sagt es schon.
+    set_temperature(nozzle_value_lbl, status.nozzle, status.nozzle_target);
+    set_temperature(bed_value_lbl, status.bed, status.bed_target);
 }
 
 // ============================================================
@@ -714,14 +713,14 @@ static void build_job_card(lv_obj_t *parent)
 
     progress_bar = lv_bar_create(card);
     lv_obj_set_size(progress_bar, CONTENT_W - 28, 16);
-    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 202);
+    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 186);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(progress_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
 }
 
 static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t color,
-                            lv_obj_t **value_out, lv_obj_t **target_out)
+                            lv_obj_t **value_out)
 {
     lv_obj_t *card = card_create(parent, x, TEMP_Y, TEMP_W, TEMP_H);
 
@@ -729,18 +728,14 @@ static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(color), 0);
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 8);
 
     lv_obj_t *value = lv_label_create(card);
     lv_label_set_text(value, "");
     lv_obj_set_style_text_font(value, &lv_font_montserrat_24, 0);
     lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 34);
 
-    lv_obj_t *target = muted_label(card, "");
-    lv_obj_align(target, LV_ALIGN_BOTTOM_MID, 0, -14);
-
     *value_out = value;
-    *target_out = target;
 }
 
 static lv_obj_t *control_button(lv_obj_t *parent, int x, const char *symbol,
@@ -785,8 +780,8 @@ void status_screen_create(lv_obj_t *parent)
 
     build_header(parent);
     build_job_card(parent);
-    build_temp_card(parent, PAD, "DUESE", COL_NOZZLE, &nozzle_value_lbl, &nozzle_target_lbl);
-    build_temp_card(parent, PAD + TEMP_W + 12, "DRUCKBETT", COL_BED, &bed_value_lbl, &bed_target_lbl);
+    build_temp_card(parent, PAD, "DUESE", COL_NOZZLE, &nozzle_value_lbl);
+    build_temp_card(parent, PAD + TEMP_W + 12, "DRUCKBETT", COL_BED, &bed_value_lbl);
 
     build_controls(parent);
 
