@@ -1,8 +1,11 @@
 #include "general_screen.h"
 
+#include <Arduino.h>
+
 #include "jog_screen.h"
 #include "settings_screen.h"
 #include "smart_plugs_screen.h"
+#include "ui_dialog.h"
 #include "ui_nav.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
@@ -165,6 +168,41 @@ static void open_jog_cb(lv_event_t *)
     lv_async_call(open_jog_async, nullptr);
 }
 
+// Neustart erst im naechsten Durchlauf, damit LVGL das Antippen und das
+// Aufraeumen des Dialogs noch zu Ende bringt — sonst startet das Geraet
+// mitten im Ereignis neu.
+static void restart_async(void *)
+{
+    delay(200);
+    ESP.restart();
+}
+
+static void restart_confirmed(void *)
+{
+    lv_async_call(restart_async, nullptr);
+}
+
+static void restart_cb(lv_event_t *)
+{
+    if (transition_pending || ui_confirm_is_open()) return;
+    ui_confirm("Bambuddy-Display neu starten?", "Das Display startet sofort neu.",
+               "Abbrechen", "Neustart", COL_ERR, restart_confirmed, nullptr);
+}
+
+static void add_restart_button()
+{
+    lv_obj_t *btn = lv_button_create(root);
+    lv_obj_set_size(btn, 40, 40);
+    lv_obj_align(btn, LV_ALIGN_TOP_RIGHT, -PAD, 6);
+    lv_obj_set_style_radius(btn, 20, 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ERR), 0);
+    lv_obj_add_event_cb(btn, restart_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *label = lv_label_create(btn);
+    lv_label_set_text(label, LV_SYMBOL_REFRESH);
+    lv_obj_center(label);
+}
+
 static lv_obj_t *add_launcher(const char *icon, const char *title, const char *subtitle,
                               uint32_t color, int y, lv_event_cb_t callback)
 {
@@ -214,6 +252,8 @@ static void build_home()
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, PAD + 4, 42);
+
+    add_restart_button();
 
     add_launcher(LV_SYMBOL_WIFI, "WLAN", "Netzwerk suchen und Verbindung verwalten",
                  COL_WIFI, 68, open_wifi_cb);

@@ -10,9 +10,9 @@
             "includePath": [
                 "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/include",
                 "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/src",
-                "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src",
                 "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src",
                 "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+                "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src",
                 "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                 "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/.pio/libdeps/esp32-4848S040CIY1/PubSubClient/src",
                 "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/.pio/libdeps/esp32-4848S040CIY1/TJpg_Decoder/src",
@@ -259,9 +259,9 @@
                 "path": [
                     "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/include",
                     "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/src",
-                    "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src",
                     "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src",
                     "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src",
+                    "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src",
                     "/Users/ricoeisenberg/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src",
                     "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/.pio/libdeps/esp32-4848S040CIY1/PubSubClient/src",
                     "/Users/ricoeisenberg/Documents/GitHub/bambuddy-display/.pio/libdeps/esp32-4848S040CIY1/TJpg_Decoder/src",
