@@ -10,7 +10,7 @@
 // Die Transparenz wird gegen COVER_BG verrechnet, dieselbe Farbe hat die
 // Kachel im Screen — dadurch wirkt das Bild freigestellt.
 
-static constexpr uint16_t COVER_SIZE = 168;
+static constexpr uint16_t COVER_SIZE = 150;
 
 // Fuers Vollbild wird dasselbe PNG noch einmal geholt und in echter Groesse
 // dekodiert. Ein hochskaliertes kleines Bild waere klobig, und Skalieren beim
