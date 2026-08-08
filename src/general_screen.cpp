@@ -15,7 +15,6 @@
 static constexpr int PAD = 12;
 static constexpr uint32_t COL_WIFI = 0x00897B;
 static constexpr uint32_t COL_SETTINGS = COL_NEUTRAL; // Kachel "Einstellungen"
-static constexpr uint32_t COL_JOG = 0x1565C0;
 
 enum view_t {
     VIEW_HOME,
@@ -155,7 +154,14 @@ static void open_smart_plugs_cb(lv_event_t *)
 static void open_jog_async(void *)
 {
     transition_pending = false;
-    if (!screen_visible) return;
+    if (!screen_visible || !root) return;
+
+    // Wie bei den Smart Plugs: Die Ansicht ist auch per Direktsprung vom
+    // Statusscreen erreichbar. War dabei eine andere Unteransicht offen, muss
+    // sie ihre Objekte freigeben — sonst zeigen ihre Timer auf geloeschte
+    // Labels.
+    destroy_active_view();
+
     lv_obj_clean(root);
     active_view = VIEW_JOG;
     jog_screen_create(root);
@@ -380,6 +386,16 @@ void general_screen_show_smart_plugs()
     screen_visible = true;
     came_from_status = true;
     lv_async_call(open_smart_plugs_async, nullptr);
+}
+
+void general_screen_show_jog()
+{
+    if (transition_pending) return;
+    transition_pending = true;
+
+    screen_visible = true;
+    came_from_status = true;
+    lv_async_call(open_jog_async, nullptr);
 }
 
 void general_screen_set_visible(bool visible)

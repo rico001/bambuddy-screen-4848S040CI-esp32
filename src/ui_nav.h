@@ -9,6 +9,9 @@
 // Wechselt auf die Systemkachel und oeffnet dort direkt die Smart Plugs.
 void ui_nav_smart_plugs();
 
+// Dasselbe fuer die Jog-Steuerung.
+void ui_nav_jog();
+
 // Zurueck auf die Statuskachel — fuer den Rueckweg aus einer Ansicht, die
 // von dort aus aufgerufen wurde.
 void ui_nav_status();
