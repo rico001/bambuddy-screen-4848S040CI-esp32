@@ -11,6 +11,7 @@
 #include "bambuddy_cover.h"
 #include "bambuddy_queue.h"
 #include "printer_icon.h"
+#include "settings_screen.h"
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_dialog.h"
@@ -561,9 +562,59 @@ static void update_cover()
     }
 }
 
+// Zustand und Auftrag, bei denen der Bildschirm zuletzt geweckt wurde, sowie
+// die zuletzt gesehene Plattenfrage.
+static char last_wake_state[sizeof(status.state)] = "";
+static char last_wake_job[sizeof(status.job)] = "";
+static bool last_awaiting_plate = false;
+
+// Wechselt der Drucker den Zustand, ist das genau der Moment, in dem jemand
+// hinsehen soll: fertig, angehalten, gescheitert, faengt an. Steht das
+// Display dann dunkel im Regal, ist die Nachricht verloren.
+//
+// Bewusst nur bei einem Wechsel und nicht bei jedem Status: Sonst bliebe der
+// Bildschirm waehrend eines ganzen Drucks an.
+static void wake_on_state_change()
+{
+    // Verbindungsluecken sind kein Ereignis. Faellt der Drucker weg, kommt
+    // ein leerer Zustand — und beim Wiederkommen derselbe wie vorher.
+    if (!status.printer_connected || status.state[0] == '\0') return;
+
+    const bool plate_asked = status.awaiting_plate_clear && !last_awaiting_plate;
+    last_awaiting_plate = status.awaiting_plate_clear;
+
+    // Ohne Ruecksicht auf Schreibweise wie ueberall sonst: Der Rohwert kommt
+    // vom Drucker durch, und HTTP und MQTT muessen ihn nicht gleich schreiben.
+    const bool state_changed = strcasecmp(last_wake_state, status.state) != 0;
+
+    // Zweiter Ausloeser neben dem Zustand: ein anderer Auftragsname. Zwei
+    // Auftraege hintereinander durchlaufen zwar dieselbe Folge von Zustaenden,
+    // aber haengt die Statusquelle im falschen Moment, kann der Wechsel
+    // dazwischen unbemerkt durchrutschen. Der Name aendert sich dann trotzdem.
+    // Ein leer werdender Name zaehlt nicht — das ist das Ende, nicht der
+    // Anfang von etwas.
+    const bool job_changed = status.job[0] && strcmp(last_wake_job, status.job) != 0;
+
+    const bool first = last_wake_state[0] == '\0';
+
+    strncpy(last_wake_state, status.state, sizeof(last_wake_state) - 1);
+    last_wake_state[sizeof(last_wake_state) - 1] = '\0';
+    strncpy(last_wake_job, status.job, sizeof(last_wake_job) - 1);
+    last_wake_job[sizeof(last_wake_job) - 1] = '\0';
+
+    // Der erste Status nach dem Einschalten ist kein Wechsel. Ihn mitzuzaehlen
+    // hiesse, die Abschaltzeit beim Start ein zweites Mal zu starten.
+    if (first) return;
+
+    if (state_changed || job_changed || plate_asked) settings_screen_wake();
+}
+
 static void ui_tick_cb(lv_timer_t *)
 {
-    if (bambuddy_api_take(&status)) have_status = true;
+    if (bambuddy_api_take(&status)) {
+        have_status = true;
+        wake_on_state_change();
+    }
 
     // Jeden Tick auswerten, nicht nur bei neuen Daten: per MQTT kommt nach
     // einem Abbruch nichts mehr nach, die Anzeige muss sich aber trotzdem

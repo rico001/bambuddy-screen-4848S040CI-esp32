@@ -12,6 +12,11 @@ void settings_apply_saved();
 void settings_screen_create(lv_obj_t *parent);
 void settings_screen_destroy();
 
+// Bildschirm sofort einschalten und die Abschaltzeit von vorn laufen lassen —
+// als haette man ihn beruehrt. Fuer Ereignisse, die man sehen soll, ohne
+// davor zu stehen.
+void settings_screen_wake();
+
 // --- Werte fuer andere Module --------------------------------------------
 // Abfrageintervall fuer den Druckerstatus. Waehrend eines Drucks kurz,
 // im Leerlauf laenger (spart Funk und Serverlast).
