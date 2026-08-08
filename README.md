@@ -46,7 +46,7 @@ If you mean that square ESP32 touchscreen board with USB-C: yes, this is the one
 
 ## Gallery
 
-### Bambuddy in action
+### Bambuddy and Bambuddy Screen in Action
 
 <table>
   <tr>
