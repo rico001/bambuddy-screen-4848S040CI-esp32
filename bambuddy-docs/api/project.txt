@@ -1,0 +1,9 @@
+Stand 
+8.8.26, bambuddy v1.2.5.2 
+
+code-base:
+    https://github.com/maziggy/bambuddy
+project page: 
+    https://bambuddy.cool/
+api documentation in addition zu api-docs.json
+    https://wiki.bambuddy.cool/reference/api/

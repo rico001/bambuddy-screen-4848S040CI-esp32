@@ -1,0 +1,5 @@
+.pio
+akm-feature-mqtt-tls/*
+boards
+include/secrets.h
+bambuddy-docs/selfhosted/*
