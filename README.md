@@ -4,6 +4,16 @@ Touch display for Bambuddy on the **Sunton ESP32-4848S040CI / ESP32-4848S040CIY1
 
 This project brings Bambuddy directly to a 4.0" ESP32 touch display: printer status, AMS, queue, archive, camera snapshot, and smart plug controls on a compact panel next to your printer.
 
+<p>
+  <img alt="PlatformIO" src="https://img.shields.io/badge/PlatformIO-ESP32-orange">
+  <img alt="ESP32-S3" src="https://img.shields.io/badge/ESP32-S3-blue">
+  <img alt="LVGL" src="https://img.shields.io/badge/LVGL-9.2.2-2dba4e">
+  <img alt="Display" src="https://img.shields.io/badge/Display-480x480-black">
+  <img alt="Bambuddy" src="https://img.shields.io/badge/Bambuddy-REST%20API-ff7a18">
+</p>
+
+ESP32-S3 touchscreen companion for **Bambuddy** and **Bambu Lab** printers, built with **LVGL** and **PlatformIO**.
+
 **Powered by Bambuddy**
 
 <p>
