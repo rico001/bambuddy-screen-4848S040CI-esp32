@@ -77,6 +77,24 @@ void ui_confirm(const char *title, const char *text,
     ui_watch("dialog:offen");
 }
 
+void ui_info(const char *title, const char *text, const char *close_label)
+{
+    if (box) return;
+
+    on_ok_cb = nullptr;
+    on_ok_data = nullptr;
+
+    box = lv_msgbox_create(lv_layer_top());
+    lv_obj_set_width(box, 420); // vor dem Text, siehe ui_confirm()
+    lv_msgbox_add_title(box, title);
+    if (text && text[0]) lv_msgbox_add_text(box, text);
+
+    lv_obj_t *close = lv_msgbox_add_footer_button(box, close_label ? close_label : "OK");
+    lv_obj_add_event_cb(close, cancel_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_center(box);
+}
+
 static void choice_cb(lv_event_t *e)
 {
     // Erst merken, dann schliessen: close_box() raeumt die Zeiger auf.

@@ -19,3 +19,4 @@ static constexpr uint32_t COL_ERR = 0xE53935;     // Fehler, zerstoerende Aktion
 static constexpr uint32_t COL_ACCENT = 0x2196F3;  // Hervorhebung, aktiver Wert
 static constexpr uint32_t COL_NEUTRAL = 0x546E7A; // zurueckhaltender Knopf
 static constexpr uint32_t COL_PLUG = 0xE85D04;    // Smart Plugs, ueberall gleich
+static constexpr uint32_t COL_JOG = 0x1565C0;     // Jog-Steuerung, ueberall gleich

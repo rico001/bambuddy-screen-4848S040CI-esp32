@@ -1,8 +1,12 @@
 #include "general_screen.h"
 
+#include <Arduino.h>
+
+#include "bambuddy_version.h"
 #include "jog_screen.h"
 #include "settings_screen.h"
 #include "smart_plugs_screen.h"
+#include "ui_dialog.h"
 #include "ui_nav.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
@@ -11,7 +15,6 @@
 static constexpr int PAD = 12;
 static constexpr uint32_t COL_WIFI = 0x00897B;
 static constexpr uint32_t COL_SETTINGS = COL_NEUTRAL; // Kachel "Einstellungen"
-static constexpr uint32_t COL_JOG = 0x1565C0;
 
 enum view_t {
     VIEW_HOME,
@@ -126,6 +129,11 @@ static void open_settings_cb(lv_event_t *)
     lv_async_call(open_settings_async, nullptr);
 }
 
+// Smart Plugs und Jog-Steuerung haben hier keine Kachel mehr: Beide braucht
+// man vor dem Drucker, nicht in den Einstellungen, und erreichbar sind sie
+// ueber die Kopfzeile des Statusscreens. Sie wohnen aber weiterhin auf dieser
+// Kachel — sie brauchen den Platz einer ganzen Seite, den der Statusscreen
+// nicht hat. Aufgeschlagen werden sie ausschliesslich per Direktsprung.
 static void open_smart_plugs_async(void *)
 {
     transition_pending = false;
@@ -141,28 +149,145 @@ static void open_smart_plugs_async(void *)
     add_back_button();
 }
 
-static void open_smart_plugs_cb(lv_event_t *)
-{
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(open_smart_plugs_async, nullptr);
-}
-
 static void open_jog_async(void *)
 {
     transition_pending = false;
-    if (!screen_visible) return;
+    if (!screen_visible || !root) return;
+
+    destroy_active_view();
+
     lv_obj_clean(root);
     active_view = VIEW_JOG;
     jog_screen_create(root);
     add_back_button();
 }
 
-static void open_jog_cb(lv_event_t *)
+// --- Versionsabgleich ----------------------------------------------------
+//
+// Gruen: die Instanz laeuft mit genau der Fassung, gegen die dieses Display
+// geprueft wurde. Rot: sie laeuft mit einer anderen — dann koennen einzelne
+// Anzeigen still auf Null stehen, weil ein Antwortfeld anders heisst.
+static lv_obj_t *version_badge = nullptr;
+static lv_obj_t *version_badge_label = nullptr;
+static lv_timer_t *version_timer = nullptr;
+
+static void version_info_cb(lv_event_t *)
 {
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(open_jog_async, nullptr);
+    if (ui_confirm_is_open()) return;
+
+    // Nur ASCII: die Montserrat-Schnitte kennen weder Gedankenstrich noch
+    // typografische Anfuehrungszeichen und zeigen dafuer ein leeres Rechteck.
+    char text[192];
+
+    if (!bambuddy_version_known()) {
+        const char *err = bambuddy_version_error();
+        snprintf(text, sizeof(text),
+                 "%s\nDieses Display ist gegen die REST-API von "
+                 BB_TESTED_VERSION " gebaut.",
+                 err[0] ? err : "Noch keine Antwort von Bambuddy.");
+        ui_info("Version unbekannt", text, "OK");
+        return;
+    }
+
+    if (bambuddy_version_matches_tested()) {
+        int n = snprintf(text, sizeof(text),
+                         "Bambuddy v%s laeuft. Die REST-API entspricht der "
+                         "Fassung, gegen die dieses Display gebaut ist.",
+                         bambuddy_version_current());
+        if (n > 0 && n < (int)sizeof(text) &&
+            bambuddy_version_update_available() && bambuddy_version_latest()[0]) {
+            snprintf(text + n, sizeof(text) - n, "\nAuf GitHub steht %s.",
+                     bambuddy_version_latest());
+        }
+        ui_info("Version passt", text, "OK");
+        return;
+    }
+
+    snprintf(text, sizeof(text),
+             "Bambuddy laeuft mit v%s, gebaut ist dieses Display gegen die "
+             "REST-API von " BB_TESTED_VERSION ".",
+             bambuddy_version_current());
+    ui_info("Version weicht ab", text, "OK");
+}
+
+static void version_badge_delete_cb(lv_event_t *)
+{
+    version_badge = nullptr;
+    version_badge_label = nullptr;
+}
+
+static void refresh_version_badge()
+{
+    if (!version_badge) return;
+
+    uint32_t color = COL_MUTED;
+    const char *symbol = "?";
+
+    if (bambuddy_version_known()) {
+        const bool ok = bambuddy_version_matches_tested();
+        color = ok ? COL_OK : COL_ERR;
+        symbol = "!";
+    }
+
+    lv_obj_set_style_bg_color(version_badge, lv_color_hex(color), 0);
+    lv_label_set_text(version_badge_label, symbol);
+}
+
+// Die Abfrage laeuft im Netzwerk-Task; die Kachel erfaehrt erst hier davon.
+static void version_timer_cb(lv_timer_t *)
+{
+    if (bambuddy_version_take_fresh()) refresh_version_badge();
+}
+
+static void add_version_badge()
+{
+    version_badge = lv_button_create(root);
+    lv_obj_set_size(version_badge, 40, 40);
+    lv_obj_align(version_badge, LV_ALIGN_TOP_RIGHT, -PAD - 48, 6);
+    lv_obj_set_style_radius(version_badge, 20, 0);
+    lv_obj_add_event_cb(version_badge, version_info_cb, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(version_badge, version_badge_delete_cb, LV_EVENT_DELETE, nullptr);
+
+    version_badge_label = lv_label_create(version_badge);
+    lv_obj_set_style_text_font(version_badge_label, &lv_font_montserrat_24, 0);
+    lv_obj_center(version_badge_label);
+
+    refresh_version_badge();
+}
+
+// Neustart erst im naechsten Durchlauf, damit LVGL das Antippen und das
+// Aufraeumen des Dialogs noch zu Ende bringt — sonst startet das Geraet
+// mitten im Ereignis neu.
+static void restart_async(void *)
+{
+    delay(200);
+    ESP.restart();
+}
+
+static void restart_confirmed(void *)
+{
+    lv_async_call(restart_async, nullptr);
+}
+
+static void restart_cb(lv_event_t *)
+{
+    if (transition_pending || ui_confirm_is_open()) return;
+    ui_confirm("Bambuddy-Display neu starten?", "Das Display startet sofort neu.",
+               "Abbrechen", "Neustart", COL_ERR, restart_confirmed, nullptr);
+}
+
+static void add_restart_button()
+{
+    lv_obj_t *btn = lv_button_create(root);
+    lv_obj_set_size(btn, 40, 40);
+    lv_obj_align(btn, LV_ALIGN_TOP_RIGHT, -PAD, 6);
+    lv_obj_set_style_radius(btn, 20, 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ERR), 0);
+    lv_obj_add_event_cb(btn, restart_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *label = lv_label_create(btn);
+    lv_label_set_text(label, LV_SYMBOL_REFRESH);
+    lv_obj_center(label);
 }
 
 static lv_obj_t *add_launcher(const char *icon, const char *title, const char *subtitle,
@@ -210,19 +335,18 @@ static void build_home()
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     lv_obj_t *hint = lv_label_create(root);
-    lv_label_set_text(hint, "Drucker, Verbindung und Display verwalten");
+    lv_label_set_text(hint, "Verbindung und Display verwalten");
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, PAD + 4, 42);
+
+    add_version_badge();
+    add_restart_button();
 
     add_launcher(LV_SYMBOL_WIFI, "WLAN", "Netzwerk suchen und Verbindung verwalten",
                  COL_WIFI, 68, open_wifi_cb);
     add_launcher(LV_SYMBOL_SETTINGS, "Einstellungen", "Bambuddy, MQTT und Darstellung",
                  COL_SETTINGS, 158, open_settings_cb);
-    add_launcher(LV_SYMBOL_POWER, "Smart Plugs", "Steckdosen ein- und ausschalten",
-                 COL_PLUG, 248, open_smart_plugs_cb);
-    add_launcher(LV_SYMBOL_SHUFFLE, "Jog-Steuerung", "Achsen und Extruder manuell bewegen",
-                 COL_JOG, 338, open_jog_cb);
 }
 
 void general_screen_create(lv_obj_t *parent)
@@ -231,6 +355,8 @@ void general_screen_create(lv_obj_t *parent)
     active_view = VIEW_HOME;
     screen_visible = false;
     build_home();
+
+    if (!version_timer) version_timer = lv_timer_create(version_timer_cb, 1000, nullptr);
 }
 
 void general_screen_show_smart_plugs()
@@ -245,6 +371,16 @@ void general_screen_show_smart_plugs()
     lv_async_call(open_smart_plugs_async, nullptr);
 }
 
+void general_screen_show_jog()
+{
+    if (transition_pending) return;
+    transition_pending = true;
+
+    screen_visible = true;
+    came_from_status = true;
+    lv_async_call(open_jog_async, nullptr);
+}
+
 void general_screen_set_visible(bool visible)
 {
     // Wischt man selbst weg, ist der Zusammenhang zum Statusscreen weg —
@@ -252,6 +388,14 @@ void general_screen_set_visible(bool visible)
     if (!visible) came_from_status = false;
 
     screen_visible = visible;
+
+    // Beim Aufschlagen der Kachel neu abfragen — nach einem Update der
+    // Instanz soll das Ausrufezeichen nicht stundenlang die alte Lage zeigen.
+    if (visible) {
+        bambuddy_version_request_refresh();
+        refresh_version_badge();
+    }
+
     if (!visible && active_view != VIEW_HOME && !transition_pending) {
         transition_pending = true;
         lv_async_call(close_async, nullptr);

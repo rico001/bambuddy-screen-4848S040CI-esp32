@@ -6,6 +6,13 @@ auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 **Getestet gegen Bambuddy-Version: v1.2.5.2**
 **Letzte Prüfung: 2026-08-08, 14:02 Uhr — unverändert**
 
+Dieselbe Versionsnummer steht ein zweites Mal im Code, als
+`BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
+laufende Fassung selbst ab und vergleicht sie damit: Der System-Screen zeigt
+oben rechts ein grünes Ausrufezeichen, wenn beide übereinstimmen, sonst ein
+rotes. **Beide Stellen zusammen ändern** — sonst behauptet das Gerät eine
+Abweichung, die es nicht gibt, oder verschweigt eine, die es gibt.
+
 ---
 
 ## Update-Prompt
@@ -102,6 +109,9 @@ Fehlerantwort mit (siehe unten).
 - `Letzte Prüfung` **bei jedem Durchlauf** auf Datum **und Uhrzeit** setzen
   (`date '+%Y-%m-%d, %H:%M'`), dahinter das Ergebnis: `unverändert` oder eine
   knappe Zusammenfassung der Anpassungen.
+- Wird `Getestet gegen …` geändert, im selben Zug `BB_TESTED_VERSION` in
+  `src/bambuddy_version.h` mitziehen — daran hängt das Ausrufezeichen im
+  System-Screen.
 
 Ohne diesen Zeitstempel weiß beim nächsten Mal niemand, ob die Prüfung von
 gestern oder von vor einem halben Jahr stammt — und damit auch nicht, wie
@@ -151,6 +161,7 @@ hier nachsehen:
 | `GET /queue/` · `POST /queue/` · `POST /queue/{id}/start` · `DELETE /queue/{id}` | `bambuddy_queue.cpp`, `bambuddy_archive.cpp` |
 | `GET /archives/` · `DELETE /archives/{id}` · `GET /archives/{id}/thumbnail` | `bambuddy_archive.cpp`, `bambuddy_cover.cpp` |
 | `GET /smart-plugs/` · `/{id}/status` · `POST /{id}/control` | `bambuddy_smart_plugs.cpp` |
+| `GET /updates/check` (Ersatz: `GET /updates/version`) | `bambuddy_version.cpp` |
 
 MQTT liest denselben Status über das Topic aus den Einstellungen
 (`bambuddy/printers/{serial}/status`) — dieselben Feldnamen wie die

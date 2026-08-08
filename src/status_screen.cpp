@@ -11,6 +11,7 @@
 #include "bambuddy_cover.h"
 #include "bambuddy_queue.h"
 #include "printer_icon.h"
+#include "settings_screen.h"
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_dialog.h"
@@ -506,6 +507,11 @@ static void plugs_cb(lv_event_t *)
     ui_nav_smart_plugs();
 }
 
+static void jog_cb(lv_event_t *)
+{
+    ui_nav_jog();
+}
+
 static void speed_cb(lv_event_t *)
 {
     static const char *const options[] = {"Leise", "Normal", "Sport", "Turbo"};
@@ -556,9 +562,59 @@ static void update_cover()
     }
 }
 
+// Zustand und Auftrag, bei denen der Bildschirm zuletzt geweckt wurde, sowie
+// die zuletzt gesehene Plattenfrage.
+static char last_wake_state[sizeof(status.state)] = "";
+static char last_wake_job[sizeof(status.job)] = "";
+static bool last_awaiting_plate = false;
+
+// Wechselt der Drucker den Zustand, ist das genau der Moment, in dem jemand
+// hinsehen soll: fertig, angehalten, gescheitert, faengt an. Steht das
+// Display dann dunkel im Regal, ist die Nachricht verloren.
+//
+// Bewusst nur bei einem Wechsel und nicht bei jedem Status: Sonst bliebe der
+// Bildschirm waehrend eines ganzen Drucks an.
+static void wake_on_state_change()
+{
+    // Verbindungsluecken sind kein Ereignis. Faellt der Drucker weg, kommt
+    // ein leerer Zustand — und beim Wiederkommen derselbe wie vorher.
+    if (!status.printer_connected || status.state[0] == '\0') return;
+
+    const bool plate_asked = status.awaiting_plate_clear && !last_awaiting_plate;
+    last_awaiting_plate = status.awaiting_plate_clear;
+
+    // Ohne Ruecksicht auf Schreibweise wie ueberall sonst: Der Rohwert kommt
+    // vom Drucker durch, und HTTP und MQTT muessen ihn nicht gleich schreiben.
+    const bool state_changed = strcasecmp(last_wake_state, status.state) != 0;
+
+    // Zweiter Ausloeser neben dem Zustand: ein anderer Auftragsname. Zwei
+    // Auftraege hintereinander durchlaufen zwar dieselbe Folge von Zustaenden,
+    // aber haengt die Statusquelle im falschen Moment, kann der Wechsel
+    // dazwischen unbemerkt durchrutschen. Der Name aendert sich dann trotzdem.
+    // Ein leer werdender Name zaehlt nicht — das ist das Ende, nicht der
+    // Anfang von etwas.
+    const bool job_changed = status.job[0] && strcmp(last_wake_job, status.job) != 0;
+
+    const bool first = last_wake_state[0] == '\0';
+
+    strncpy(last_wake_state, status.state, sizeof(last_wake_state) - 1);
+    last_wake_state[sizeof(last_wake_state) - 1] = '\0';
+    strncpy(last_wake_job, status.job, sizeof(last_wake_job) - 1);
+    last_wake_job[sizeof(last_wake_job) - 1] = '\0';
+
+    // Der erste Status nach dem Einschalten ist kein Wechsel. Ihn mitzuzaehlen
+    // hiesse, die Abschaltzeit beim Start ein zweites Mal zu starten.
+    if (first) return;
+
+    if (state_changed || job_changed || plate_asked) settings_screen_wake();
+}
+
 static void ui_tick_cb(lv_timer_t *)
 {
-    if (bambuddy_api_take(&status)) have_status = true;
+    if (bambuddy_api_take(&status)) {
+        have_status = true;
+        wake_on_state_change();
+    }
 
     // Jeden Tick auswerten, nicht nur bei neuen Daten: per MQTT kommt nach
     // einem Abbruch nichts mehr nach, die Anzeige muss sich aber trotzdem
@@ -644,13 +700,18 @@ static void build_header(lv_obj_t *parent)
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
     lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
-    lv_obj_set_width(name_lbl, 212);
+    // Schmaler als frueher: Rechts stehen jetzt zwei Sprungknoepfe, und der
+    // Name darf der Badge nicht in die Quere kommen. Zu lange Namen kuerzt
+    // LVGL mit Punkten.
+    lv_obj_set_width(name_lbl, 150);
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
 
-    // Direktsprung zu den Smart Plugs, ganz rechts in der Kopfzeile. Die
-    // Steckdosen schaltet man meist direkt nach einem Druckende — dafuer
-    // soll man nicht erst zwei Kacheln weiter wischen.
+    // Direktspruenge in die Systemkachel, ganz rechts in der Kopfzeile. Beide
+    // Ansichten braucht man, waehrend man vor dem Drucker steht: die
+    // Steckdosen meist direkt nach einem Druckende, die Jog-Steuerung beim
+    // Aufraeumen der Platte. Dafuer soll man nicht erst zwei Kacheln weiter
+    // wischen.
     lv_obj_t *plugs_btn = lv_button_create(parent);
     lv_obj_set_size(plugs_btn, 52, 30);
     lv_obj_align(plugs_btn, LV_ALIGN_TOP_RIGHT, -PAD, 8);
@@ -662,13 +723,24 @@ static void build_header(lv_obj_t *parent)
     lv_label_set_text(plugs_icon, LV_SYMBOL_POWER);
     lv_obj_center(plugs_icon);
 
+    lv_obj_t *jog_btn = lv_button_create(parent);
+    lv_obj_set_size(jog_btn, 52, 30);
+    lv_obj_align(jog_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 52 + 8), 8);
+    lv_obj_set_style_radius(jog_btn, 10, 0);
+    lv_obj_set_style_bg_color(jog_btn, lv_color_hex(COL_JOG), 0);
+    lv_obj_add_event_cb(jog_btn, jog_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *jog_icon = lv_label_create(jog_btn);
+    lv_label_set_text(jog_icon, LV_SYMBOL_SHUFFLE);
+    lv_obj_center(jog_icon);
+
     // Fester Abstand vom rechten Rand statt Ausrichtung am Knopf: Die Badge
     // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
     // dass die Position neu berechnet werden muss.
     badge = lv_obj_create(parent);
     lv_obj_set_height(badge, 28);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 52 + 8), 8);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(badge, 15, 0);
     lv_obj_set_style_border_width(badge, 0, 0);
