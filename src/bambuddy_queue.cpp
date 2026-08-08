@@ -133,7 +133,7 @@ static void fetch_queue()
         it.print_seconds = obj["print_time_seconds"] | 0;
         it.grams = obj["filament_used_grams"] | 0.0f;
         strncpy(it.filament, obj["filament_type"] | "", sizeof(it.filament) - 1);
-        it.color = bambuddy_parse_hex_color(obj["filament_color"] | "");
+        it.color = bambuddy_parse_color(obj["filament_color"] | "");
         it.manual_start = obj["manual_start"] | false;
 
         count++;
@@ -206,7 +206,7 @@ static void fetch_ams()
             strncpy(slot.type, type, sizeof(slot.type) - 1);
             slot.type[sizeof(slot.type) - 1] = '\0';
 
-            slot.color = bambuddy_parse_hex_color(t["tray_color"] | "");
+            slot.color = bambuddy_parse_color(t["tray_color"] | "");
             count++;
         }
     }

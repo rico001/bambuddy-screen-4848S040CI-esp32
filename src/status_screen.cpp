@@ -12,6 +12,7 @@
 #include "bambuddy_queue.h"
 #include "printer_icon.h"
 #include "ui_layout.h"
+#include "ui_nav.h"
 #include "ui_dialog.h"
 #include "ui_image_view.h"
 #include "ui_theme.h"
@@ -252,6 +253,30 @@ static void update_status_fields()
 {
     ui_set_text(name_lbl, status.name[0] ? status.name : "Drucker");
 
+    // Ist der Drucker nicht erreichbar, sind alle Werte von vorhin — der
+    // letzte Auftragsname, die letzte Temperatur, der letzte Zustand. Sie
+    // stehenzulassen taeuscht Aktualitaet vor, "Unbekannt" oder "k.A."
+    // fuellt die Flaeche mit Nichtssagendem. Also leer lassen: Was der
+    // Drucker gerade macht, sagt die Badge oben rechts.
+    if (!status.printer_connected) {
+        ui_set_text(state_lbl, "");
+        ui_set_text(job_lbl, "");
+        ui_set_text(layer_lbl, "");
+        ui_set_text(progress_lbl, "");
+        ui_set_text(remaining_lbl, "");
+        ui_set_text(queue_lbl, "");
+
+        // Bei den Temperaturen ausdruecklich "k.A." statt leer: Eine leere
+        // Karte sieht aus wie ein Anzeigefehler, waehrend die uebrigen
+        // Felder als Fliesstext gar nicht erst auffallen, wenn sie fehlen.
+        ui_set_text(nozzle_value_lbl, "k.A.");
+        ui_set_text(bed_value_lbl, "k.A.");
+        if (lv_bar_get_value(progress_bar) != 0) {
+            lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+        }
+        return;
+    }
+
     if (light_switching && status.chamber_light == light_target_on) {
         light_switching = false;
     }
@@ -442,7 +467,7 @@ static void update_controls()
     const bool light_on = have_status && status.chamber_light;
     ui_set_text(light_btn_lbl, light_on ? LV_SYMBOL_CHARGE "  Licht aus"
                                        : LV_SYMBOL_CHARGE "  Licht an");
-    ui_set_bg_color(light_btn, light_on ? 0x546E7A : COL_WARN);
+    ui_set_bg_color(light_btn, light_on ? COL_NEUTRAL : COL_WARN);
 }
 
 static void stop_confirmed(void *)
@@ -474,6 +499,11 @@ static void speed_chosen(int index, void *)
     ui_set_text(speed_btn_lbl, speed_name(level));
 
     bambuddy_api_send_speed(level);
+}
+
+static void plugs_cb(lv_event_t *)
+{
+    ui_nav_smart_plugs();
 }
 
 static void speed_cb(lv_event_t *)
@@ -618,10 +648,27 @@ static void build_header(lv_obj_t *parent)
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
 
+    // Direktsprung zu den Smart Plugs, ganz rechts in der Kopfzeile. Die
+    // Steckdosen schaltet man meist direkt nach einem Druckende — dafuer
+    // soll man nicht erst zwei Kacheln weiter wischen.
+    lv_obj_t *plugs_btn = lv_button_create(parent);
+    lv_obj_set_size(plugs_btn, 52, 30);
+    lv_obj_align(plugs_btn, LV_ALIGN_TOP_RIGHT, -PAD, 8);
+    lv_obj_set_style_radius(plugs_btn, 10, 0);
+    lv_obj_set_style_bg_color(plugs_btn, lv_color_hex(COL_PLUG), 0);
+    lv_obj_add_event_cb(plugs_btn, plugs_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *plugs_icon = lv_label_create(plugs_btn);
+    lv_label_set_text(plugs_icon, LV_SYMBOL_POWER);
+    lv_obj_center(plugs_icon);
+
+    // Fester Abstand vom rechten Rand statt Ausrichtung am Knopf: Die Badge
+    // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
+    // dass die Position neu berechnet werden muss.
     badge = lv_obj_create(parent);
     lv_obj_set_height(badge, 28);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -PAD, 8);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 52 + 8), 8);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(badge, 15, 0);
     lv_obj_set_style_border_width(badge, 0, 0);
@@ -765,7 +812,7 @@ static lv_obj_t *control_button(lv_obj_t *parent, int x, const char *symbol,
 static void build_controls(lv_obj_t *parent)
 {
     pause_btn = control_button(parent, PAD, LV_SYMBOL_PAUSE, "Pause",
-                               0x546E7A, pause_cb);
+                               COL_NEUTRAL, pause_cb);
     resume_btn = control_button(parent, PAD + CTRL_W + CTRL_GAP, LV_SYMBOL_PLAY, "Start",
                                 COL_OK, resume_cb);
     stop_btn = control_button(parent, PAD + 2 * (CTRL_W + CTRL_GAP), LV_SYMBOL_STOP, "Stopp",
@@ -795,7 +842,7 @@ void status_screen_create(lv_obj_t *parent)
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -4);
+    lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -6);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);
     lv_timer_set_repeat_count(ui_timer, -1);

@@ -3,14 +3,14 @@
 #include "jog_screen.h"
 #include "settings_screen.h"
 #include "smart_plugs_screen.h"
+#include "ui_nav.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "wifi_screen.h"
 
 static constexpr int PAD = 12;
 static constexpr uint32_t COL_WIFI = 0x00897B;
-static constexpr uint32_t COL_SETTINGS = 0x546E7A;
-static constexpr uint32_t COL_PLUG = 0xE85D04;
+static constexpr uint32_t COL_SETTINGS = COL_NEUTRAL; // Kachel "Einstellungen"
 static constexpr uint32_t COL_JOG = 0x1565C0;
 
 enum view_t {
@@ -26,12 +26,18 @@ static view_t active_view = VIEW_HOME;
 static bool transition_pending = false;
 static bool screen_visible = false;
 
+// Wurde die Ansicht per Direktsprung vom Statusscreen geoeffnet? Dann fuehrt
+// "Zurueck" auch dorthin zurueck und nicht in die Kachelübersicht — sonst
+// steht man nach dem Schalten einer Steckdose an einer Stelle, die man gar
+// nicht aufgesucht hat.
+static bool came_from_status = false;
+
 static void build_home();
 
-static void close_active_view()
+// Gibt die Objekte der offenen Unteransicht frei. Muss vor jedem
+// lv_obj_clean(root) laufen, egal ob zurueck oder quer gesprungen wird.
+static void destroy_active_view()
 {
-    if (!root || active_view == VIEW_HOME) return;
-
     if (active_view == VIEW_WIFI) {
         wifi_screen_destroy();
     } else if (active_view == VIEW_SETTINGS) {
@@ -41,10 +47,22 @@ static void close_active_view()
     } else if (active_view == VIEW_JOG) {
         jog_screen_destroy();
     }
+}
+
+static void close_active_view()
+{
+    if (!root || active_view == VIEW_HOME) return;
+
+    destroy_active_view();
 
     lv_obj_clean(root);
     active_view = VIEW_HOME;
     build_home();
+
+    if (came_from_status) {
+        came_from_status = false;
+        ui_nav_status();
+    }
 }
 
 static void close_async(void *)
@@ -111,7 +129,12 @@ static void open_settings_cb(lv_event_t *)
 static void open_smart_plugs_async(void *)
 {
     transition_pending = false;
-    if (!screen_visible) return;
+    if (!screen_visible || !root) return;
+
+    // War eine andere Unteransicht offen, muss sie ihre Objekte freigeben —
+    // sonst zeigen ihre Timer auf geloeschte Labels.
+    destroy_active_view();
+
     lv_obj_clean(root);
     active_view = VIEW_SMART_PLUGS;
     smart_plugs_screen_create(root);
@@ -210,8 +233,24 @@ void general_screen_create(lv_obj_t *parent)
     build_home();
 }
 
+void general_screen_show_smart_plugs()
+{
+    if (transition_pending) return;
+    transition_pending = true;
+
+    // Die Kachel wurde gerade aufgeschlagen; das Sichtbar-Ereignis des
+    // Tileviews kann noch ausstehen, deshalb hier selbst setzen.
+    screen_visible = true;
+    came_from_status = true;
+    lv_async_call(open_smart_plugs_async, nullptr);
+}
+
 void general_screen_set_visible(bool visible)
 {
+    // Wischt man selbst weg, ist der Zusammenhang zum Statusscreen weg —
+    // ein spaeteres "Zurueck" soll dann nicht dorthin springen.
+    if (!visible) came_from_status = false;
+
     screen_visible = visible;
     if (!visible && active_view != VIEW_HOME && !transition_pending) {
         transition_pending = true;

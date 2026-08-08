@@ -869,7 +869,7 @@ static void build_password_view(lv_obj_t *parent)
     lv_obj_t *eye_btn = lv_button_create(view_password);
     lv_obj_set_size(eye_btn, 58, 46);
     lv_obj_align(eye_btn, LV_ALIGN_TOP_RIGHT, 0, 26);
-    lv_obj_set_style_bg_color(eye_btn, lv_color_hex(0x546E7A), 0);
+    lv_obj_set_style_bg_color(eye_btn, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(eye_btn, pw_eye_cb, LV_EVENT_CLICKED, nullptr);
     pw_eye_lbl = lv_label_create(eye_btn);
     lv_label_set_text(pw_eye_lbl, LV_SYMBOL_EYE_CLOSE);
@@ -884,7 +884,7 @@ static void build_password_view(lv_obj_t *parent)
     lv_obj_align(pw_error_lbl, LV_ALIGN_TOP_LEFT, 4, 78);
     lv_obj_add_flag(pw_error_lbl, LV_OBJ_FLAG_HIDDEN);
 
-    lv_obj_t *cancel_btn = make_button(view_password, LV_SYMBOL_LEFT "  Zurueck", 0x546E7A, pw_cancel_cb);
+    lv_obj_t *cancel_btn = make_button(view_password, LV_SYMBOL_LEFT "  Zurueck", COL_NEUTRAL, pw_cancel_cb);
     lv_obj_set_size(cancel_btn, 150, 46);
     lv_obj_align(cancel_btn, LV_ALIGN_TOP_LEFT, 0, 100);
 
@@ -934,7 +934,7 @@ static void build_connected_view(lv_obj_t *parent)
     lv_obj_set_style_text_color(conn_rssi_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(conn_rssi_lbl, LV_ALIGN_TOP_LEFT, 4, 70);
 
-    lv_obj_t *disc_btn = make_button(view_connected, LV_SYMBOL_CLOSE "  Trennen", 0x546E7A, disconnect_cb);
+    lv_obj_t *disc_btn = make_button(view_connected, LV_SYMBOL_CLOSE "  Trennen", COL_NEUTRAL, disconnect_cb);
     lv_obj_set_size(disc_btn, (CONTENT_W - 10) / 2, 48);
     lv_obj_align(disc_btn, LV_ALIGN_TOP_LEFT, 0, 146);
 
@@ -975,7 +975,7 @@ static void build_focus_view(lv_obj_t *parent)
     lv_obj_set_size(focus_primary_btn, CONTENT_W, 48);
     lv_obj_align(focus_primary_btn, LV_ALIGN_TOP_MID, 0, 182);
 
-    lv_obj_t *other_btn = make_button(view_focus, LV_SYMBOL_LIST "  Anderes Netzwerk", 0x546E7A, focus_secondary_cb);
+    lv_obj_t *other_btn = make_button(view_focus, LV_SYMBOL_LIST "  Anderes Netzwerk", COL_NEUTRAL, focus_secondary_cb);
     lv_obj_set_size(other_btn, CONTENT_W, 48);
     lv_obj_align(other_btn, LV_ALIGN_TOP_MID, 0, 240);
 }

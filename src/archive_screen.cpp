@@ -233,7 +233,7 @@ static void build_row(int index)
     lv_obj_set_size(del, DELETE_SIZE, DELETE_SIZE);
     lv_obj_align(del, LV_ALIGN_RIGHT_MID, -(PLAY_SIZE + 8), 0);
     lv_obj_set_style_radius(del, 10, 0);
-    lv_obj_set_style_bg_color(del, lv_color_hex(0x546E7A), 0);
+    lv_obj_set_style_bg_color(del, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(del, delete_cb, LV_EVENT_CLICKED, (void *)(intptr_t)index);
     if (locked) lv_obj_add_state(del, LV_STATE_DISABLED);
 

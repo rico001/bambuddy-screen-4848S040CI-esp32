@@ -14,12 +14,14 @@
 #include "status_bar.h"
 #include "status_screen.h"
 #include "ui_layout.h"
+#include "ui_nav.h"
 #include "ui_watch.h"
 #include "wifi_screen.h"
 
 // --- Globals ---
 static lv_obj_t *tileview;
 static lv_obj_t *ams_tile;
+static lv_obj_t *status_tile;
 static lv_obj_t *queue_tile;
 static lv_obj_t *archive_tile;
 static lv_obj_t *general_tile;
@@ -35,6 +37,26 @@ static void tile_changed_cb(lv_event_t *)
     queue_screen_set_visible(queue_visible);
     archive_screen_set_visible(archive_visible);
     general_screen_set_visible(general_visible);
+}
+
+// Sprung vom Statusscreen direkt zu den Smart Plugs: erst die Kachel
+// wechseln, dann dort die Unteransicht oeffnen. Ohne den Kachelwechsel
+// wuerde die Ansicht aufgebaut, waehrend sie niemand sieht.
+void ui_nav_smart_plugs()
+{
+    if (!tileview || !general_tile) return;
+
+    lv_tileview_set_tile(tileview, general_tile, LV_ANIM_OFF);
+    tile_changed_cb(nullptr);
+    general_screen_show_smart_plugs();
+}
+
+void ui_nav_status()
+{
+    if (!tileview || !status_tile) return;
+
+    lv_tileview_set_tile(tileview, status_tile, LV_ANIM_OFF);
+    tile_changed_cb(nullptr);
 }
 
 // Beim Start sagen, warum zuletzt neu gestartet wurde. Ohne diese Zeile
@@ -116,6 +138,7 @@ void setup()
     // Daten-Screens und die dynamische Systemansicht bekommen ihre
     // Sichtbarkeit ueber den Tilewechsel gemeldet.
     ams_tile = tile1;
+    status_tile = tile2;
     queue_tile = tile3;
     archive_tile = tile4;
     general_tile = tile5;
