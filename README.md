@@ -1,168 +1,216 @@
-# ESP32-4848S040CI-demo
+# Bambuddy Display for ESP32-4848S040CI
 
-![Sunton ESP32-4848S040CI Board](docs/device.png)
+Touch display for Bambuddy on the **Sunton ESP32-4848S040CI / ESP32-4848S040CIY1**.
 
-PlatformIO-Projekt für das Sunton ESP32-4848S040C Board (ESP32-4848S040CI) mit LVGL Display-Treiber basierend auf der [esp32-smartdisplay](https://github.com/rzeldent/esp32-smartdisplay) Library.
+This project brings Bambuddy directly to a 4.0" ESP32 touch display: printer status, AMS, queue, archive, camera snapshot, and smart plug controls on a compact panel next to your printer.
 
-## Projektstruktur
+**Powered by Bambuddy**
 
-```
-smartdisplay-4848S040CI-demo/
-├── boards/                # Git-Submodul mit Sunton Board-Definitionen
-├── include/
-│   └── lv_conf.h          # LVGL Konfigurationsdatei
-├── src/
-│   └── main.cpp           # Hauptprogramm
-├── pre_build.py           # Pre-Build-Script (entfernt ARM-Assembly)
-├── platformio.ini         # PlatformIO Projektkonfiguration
-└── README.md
-```
+<p>
+  <img src="docs/1000020755.jpg" alt="Bambuddy display next to Bambu Studio showing printer status" width="100%">
+</p>
 
-## Was aus der smartdisplay README übernommen wurde
+## What is this?
 
-Die Schritte orientieren sich an der Anleitung im übergeordneten [esp32-smartdisplay README](../README.md):
+`bambuddy-display` is a native LVGL interface for an ESP32-S3 display board. The device connects to your Bambuddy instance and shows key printer information directly on the touchscreen.
 
-![esp32-smartdisplay GitHub Repository](docs/template-github-project.png)
+It is built to work with [Bambuddy](https://github.com/maziggy/bambuddy), a self-hosted command center for Bambu Lab printers, and uses Bambuddy's REST API for device data and actions. Bambuddy also provides API reference documentation in its docs and repository.
 
-### Step 2 — Board-Definitionen als Git-Submodul (wie beschrieben im ESP32-4848S040CI README)
+Current features:
 
-```bash
-git init
-git submodule add https://github.com/rzeldent/platformio-espressif32-sunton.git boards
-```
+- Live printer status for Bambu printers
+- AMS view
+- Queue view with start actions
+- Archive view with reprint and delete
+- Printer camera snapshot
+- Smart plug controls
+- Wi-Fi setup directly on the device
+- Bambuddy configuration for HTTP or MQTT
 
-Direkt aus der README übernommen. Die Board-JSON-Dateien (hier `esp32-4848S040CIY1.json`) liegen im `boards/`-Ordner und werden von PlatformIO automatisch erkannt.
+## Target Hardware
 
-### Step 3 — Projekt mit Platzhalter-Board erstellt (wie beschrieben im ESP32-4848S040CI README)
+This project is built for the following board:
 
-```bash
-pio project init --board esp32dev
-```
+- **Sunton ESP32-4848S040CI**
+- PlatformIO board ID: `esp32-4848S040CIY1`
+- ESP32-S3
+- 480x480 touch display
+- 4.0 inch
+- USB-C for power and flashing
 
-Wie in der README empfohlen: ein bekanntes ESP32-Board als Platzhalter verwenden und danach in der `platformio.ini` auf `esp32-4848S040CIY1` ändern.
+<p>
+  <img src="docs/aliexpress_4848S040CI.png" alt="Sunton ESP32-4848S040CI product image" width="560">
+</p>
 
-### Step 4 — Library als Dependency hinzugefügt (wie beschrieben im ESP32-4848S040CI README)
+If you mean that square ESP32 touchscreen board with USB-C: yes, this is the one.
 
-```ini
-lib_deps =
-    https://github.com/rzeldent/esp32-smartdisplay.git
-```
+## Gallery
 
-Direkt aus der README übernommen — bindet die Library und LVGL automatisch als Dependency ein.
+### Bambuddy in action
 
-### Step 5 — lv_conf.h erstellt (wie beschrieben im ESP32-4848S040CI README)
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/1000020759.jpg" alt="Queue view on the Bambuddy display" width="100%" height="320" style="object-fit: cover; object-position: center;">
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/1000020763.jpg" alt="Smart plug controls on the Bambuddy display" width="100%" height="320" style="object-fit: cover; object-position: center;">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/1000020761.jpg" alt="Bambuddy display during printing" width="100%" height="320" style="object-fit: cover; object-position: center;">
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/1000020762.jpg" alt="Close-up of the Bambuddy display interface" width="100%" height="320" style="object-fit: cover; object-position: center;">
+    </td>
+  </tr>
+  <tr>
+    <td align="center" colspan="2">
+      <img src="docs/1000020757.jpg" alt="Main printer status view on the Bambuddy display" width="49%" height="320" style="object-fit: cover; object-position: center;">
+    </td>
+  </tr>
+</table>
 
-Die README empfiehlt, die Datei `lv_conf_template.h` aus der LVGL-Library nach `include/` zu kopieren und umzubenennen. Die wichtigen Einstellungen aus der README wurden übernommen:
+More photos are available in [`docs/`](docs/).
 
-- `LV_COLOR_DEPTH 16` — nur RGB565 wird auf diesen Panels unterstützt (wie in der README angegeben)
-- `#if 1` statt `#if 0` am Anfang — aktiviert die Datei (wie in der README beschrieben)
-- `LV_USE_SYSMON 0` - keine FPS-/CPU-Debuganzeige auf dem Display
+## Get Started
 
-### Step 6 — Build-Flags übernommen (wie beschrieben im ESP32-4848S040CI README)
+### 1. Get the hardware
 
-Die Build-Flags wurden aus der README übernommen:
+You need:
 
-```ini
-build_flags =
-    -Ofast
-    -Wall
-    '-D BOARD_NAME="${this.board}"'
-    '-D CORE_DEBUG_LEVEL=ARDUHAL_LOG_LEVEL_INFO'
-    -D LV_CONF_PATH=${platformio.include_dir}/lv_conf.h
-```
+- a **Sunton ESP32-4848S040CI** display board
+- a **USB-C data cable**
+- a computer with PlatformIO
+- a running **Bambuddy** instance
 
-Ebenso `monitor_speed`, `monitor_rts`, `monitor_dtr`, `monitor_filters` und `board_build.partitions` aus dem Appendix-Template der README.
-
-### Step 7 — Display-Initialisierung in main.cpp (wie beschrieben im ESP32-4848S040CI README)
-
-Der Code in `main.cpp` folgt 1:1 dem Beispiel aus der README:
-
-- `smartdisplay_init()` im `setup()`
-- `lv_tick_inc()` + `lv_timer_handler()` im `loop()`
-
-Zusätzlich wurde ein einfaches Label hinzugefügt um zu prüfen, ob das Display funktioniert.
-
-## Was NICHT direkt aus der README übernommen werden konnte
-
-Folgende Anpassungen waren nötig, die über die README-Anleitung hinausgehen:
-
-### Platform-Version pinnen
-
-Die README gibt `platform = espressif32` ohne Version an. Die aktuellste Version (55.x pioarduino mit ESP-IDF 5.5+) ist jedoch inkompatibel mit der esp32-smartdisplay Library — die ESP-IDF API hat `disp_off` zu `disp_on_off` umbenannt.
-
-**Lösung**: Platform auf `espressif32 @ 6.9.0` gepinnt.
-
-### LVGL-Version explizit pinnen
-
-Die Library definiert `lvgl/lvgl @ ^9.2.2` als Dependency. Das `^` erlaubt PlatformIO aber, automatisch auf 9.5.0 zu aktualisieren, was ARM-spezifische Assembly-Dateien enthält.
-
-**Lösung**: LVGL explizit als `lvgl/lvgl @ 9.2.2` in `lib_deps` hinzugefügt.
-
-### Pre-Build-Script für ARM-Assembly
-
-Auch LVGL 9.2.2 enthält ARM-spezifische Assembly-Dateien (Helium `.S` und NEON `.S`), die der Xtensa-Assembler (ESP32-S3) nicht verarbeiten kann. Das wird in der README nicht erwähnt.
-
-**Lösung**: `pre_build.py` entfernt diese Dateien automatisch vor jedem Build:
-- `lvgl/src/draw/sw/blend/helium/lv_blend_helium.S`
-- `lvgl/src/draw/sw/blend/neon/lv_blend_neon.S`
-
-### LV_CONF_PATH Quoting
-
-Die README zeigt die Syntax `'-D LV_CONF_PATH=${platformio.include_dir}/lv_conf.h'`. Bei LVGL 9.2.x funktioniert das aber nur **ohne** zusätzliche Anführungszeichen um den Pfad, da das `__LV_TO_STR`-Macro den Wert selbst stringifiziert. Mit Quotes bekommt man `#include expects "FILENAME"` Fehler.
-
-## Bekannte Probleme / Fallstricke
-
-| Problem | Ursache | Lösung |
-|---------|---------|--------|
-| `#include expects "FILENAME"` bei LV_CONF_PATH | Falsche Anführungszeichen im `-D` Flag | Keine Quotes um den Pfad verwenden |
-| `disp_off` has no member / `disp_on_off` | Zu neue ESP-IDF Version (5.5+) | Platform auf `espressif32 @ 6.9.0` pinnen |
-| `unknown opcode 'typedef'` bei `.S`-Dateien | ARM-Assembly wird mit Xtensa-Assembler kompiliert | Pre-Build-Script entfernt die `.S`-Dateien |
-| LVGL 9.5.0 wird automatisch gezogen | `^9.2.2` Dependency erlaubt Minor-Upgrades | LVGL explizit auf `9.2.2` pinnen in `lib_deps` |
-| Änderungen an lv_conf.h wirken nicht | Library-Cache in `.pio/` | `.pio/`-Ordner löschen und neu bauen |
-| Pfad zu `lv_conf.h` wird falsch aufgelöst | `ESP32` ist ein Preprocessor-Macro (`#define ESP32 1`) — Ordnernamen mit `ESP32` werden vom Compiler verstümmelt | Projektordner darf nicht `ESP32` im Namen haben (daher `smartdisplay-...` statt `ESP32-...`) |
-
-## Build & Flash
+### 2. Clone the repo
 
 ```bash
-pio run                    # Kompilieren
-pio run --target upload    # Auf das Board flashen
-pio device monitor         # Serielle Ausgabe anzeigen
+git clone <your-repo-url>
+cd bambuddy-display
 ```
 
-### Weitere nützliche PlatformIO-Befehle
+### 3. Prepare your config
+
+`include/secrets.example.h` is the template for your initial configuration.
 
 ```bash
-# Build + Upload + Monitor in einem Schritt
-pio run --target upload && pio device monitor
-
-# Clean Build (z.B. nach Änderungen an lv_conf.h)
-rm -rf .pio && pio run
-
-# Filesystem (SPIFFS/LittleFS) hochladen
-pio run --target uploadfs
-
-# Board-Info anzeigen
-pio boards | grep 4848
-
-# Installierte Libraries anzeigen
-pio pkg list
+cp include/secrets.example.h include/secrets.h
 ```
 
-### Backup-Firmware wiederherstellen
+Then fill in `include/secrets.h` with:
+
+- `BAMBUDDY_DEFAULT_URL`
+- `BAMBUDDY_DEFAULT_API_KEY`
+- `BAMBUDDY_DEFAULT_PRINTER_ID`
+- optional camera token
+- optional MQTT credentials
+
+Important: these values are only the **initial defaults for the first boot**. After that, the display stores its own settings in NVS.
+
+### 4. Build the firmware
 
 ```bash
-~/.platformio/penv/bin/python ~/.platformio/packages/tool-esptoolpy/esptool.py \
-    --chip esp32s3 --port /dev/cu.usbserial-10 \
-    write_flash 0x0 backup-initial-demo/firmware_full_16MB.bin
+pio run
 ```
 
-Siehe auch [backup-initial-demo/README.md](backup-initial-demo/README.md) für Details.
+### 5. Flash the board
 
-## Speicherverbrauch
+Connect the board via **USB-C**, then run:
 
+```bash
+pio run --target upload
 ```
-RAM:   [==        ]  21.1% (69 KB / 328 KB)
-Flash: [===       ]  27.2% (535 KB / 1966 KB)
+
+Open the serial monitor:
+
+```bash
+pio device monitor
 ```
-# bambuddy-screen-4848S040CI-esp32
-# bambuddy-screen-4848S040CI-esp32
+
+## First Boot
+
+After flashing:
+
+1. Power up the display over USB-C
+2. Configure Wi-Fi on the device
+3. Verify the Bambuddy URL and API access
+4. Set the printer ID
+5. Optionally switch to MQTT
+
+At that point, the display should start showing live printer status.
+
+## UI Layout
+
+The interface is built as a horizontal tile view:
+
+- **AMS**
+- **Status**
+- **Queue**
+- **Archive**
+- **System**
+
+Inside the system area you will find:
+
+- Wi-Fi
+- Settings
+- Smart Plugs
+- Jog controls
+
+## Connection to Bambuddy
+
+The display supports two data sources:
+
+- **HTTP polling**
+- **MQTT**
+
+MQTT is a good choice if you want status changes to appear on the display as quickly as possible. HTTP is the simpler option to get started.
+
+This project primarily talks to Bambuddy through its REST API, with optional MQTT support for faster status updates.
+
+## Development
+
+### Stack
+
+- PlatformIO
+- Arduino framework
+- ESP32-S3
+- LVGL 9.2.2
+- `esp32-smartdisplay`
+
+### Build
+
+```bash
+pio run
+```
+
+### Upload
+
+```bash
+pio run --target upload
+```
+
+### Monitor
+
+```bash
+pio device monitor
+```
+
+## Tested With
+
+Tested with **Bambuddy v0.2.4.4**.
+Tested on a **Bambu Lab P1S**.
+
+As of **August 8, 2026**, this appears to be the latest stable Bambuddy release on GitHub. If you are on a newer release, small API or behavior differences may exist.
+
+## Project Status
+
+This is no longer a generic display demo. It is a dedicated **Bambuddy companion display** for Bambu printers.
+
+A sensible next step would be a small web flasher page so the firmware can be installed directly from the browser, similar to WLED or Tasmota.
+
+## Thanks
+
+Thanks to the [Bambuddy project](https://github.com/maziggy/bambuddy) and its REST API.
