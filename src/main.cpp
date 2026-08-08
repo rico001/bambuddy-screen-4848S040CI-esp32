@@ -51,6 +51,15 @@ void ui_nav_smart_plugs()
     general_screen_show_smart_plugs();
 }
 
+void ui_nav_jog()
+{
+    if (!tileview || !general_tile) return;
+
+    lv_tileview_set_tile(tileview, general_tile, LV_ANIM_OFF);
+    tile_changed_cb(nullptr);
+    general_screen_show_jog();
+}
+
 void ui_nav_status()
 {
     if (!tileview || !status_tile) return;

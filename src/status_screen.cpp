@@ -506,6 +506,11 @@ static void plugs_cb(lv_event_t *)
     ui_nav_smart_plugs();
 }
 
+static void jog_cb(lv_event_t *)
+{
+    ui_nav_jog();
+}
+
 static void speed_cb(lv_event_t *)
 {
     static const char *const options[] = {"Leise", "Normal", "Sport", "Turbo"};
@@ -644,13 +649,18 @@ static void build_header(lv_obj_t *parent)
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
     lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
-    lv_obj_set_width(name_lbl, 212);
+    // Schmaler als frueher: Rechts stehen jetzt zwei Sprungknoepfe, und der
+    // Name darf der Badge nicht in die Quere kommen. Zu lange Namen kuerzt
+    // LVGL mit Punkten.
+    lv_obj_set_width(name_lbl, 150);
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
 
-    // Direktsprung zu den Smart Plugs, ganz rechts in der Kopfzeile. Die
-    // Steckdosen schaltet man meist direkt nach einem Druckende — dafuer
-    // soll man nicht erst zwei Kacheln weiter wischen.
+    // Direktspruenge in die Systemkachel, ganz rechts in der Kopfzeile. Beide
+    // Ansichten braucht man, waehrend man vor dem Drucker steht: die
+    // Steckdosen meist direkt nach einem Druckende, die Jog-Steuerung beim
+    // Aufraeumen der Platte. Dafuer soll man nicht erst zwei Kacheln weiter
+    // wischen.
     lv_obj_t *plugs_btn = lv_button_create(parent);
     lv_obj_set_size(plugs_btn, 52, 30);
     lv_obj_align(plugs_btn, LV_ALIGN_TOP_RIGHT, -PAD, 8);
@@ -662,13 +672,24 @@ static void build_header(lv_obj_t *parent)
     lv_label_set_text(plugs_icon, LV_SYMBOL_POWER);
     lv_obj_center(plugs_icon);
 
+    lv_obj_t *jog_btn = lv_button_create(parent);
+    lv_obj_set_size(jog_btn, 52, 30);
+    lv_obj_align(jog_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 52 + 8), 8);
+    lv_obj_set_style_radius(jog_btn, 10, 0);
+    lv_obj_set_style_bg_color(jog_btn, lv_color_hex(COL_JOG), 0);
+    lv_obj_add_event_cb(jog_btn, jog_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *jog_icon = lv_label_create(jog_btn);
+    lv_label_set_text(jog_icon, LV_SYMBOL_SHUFFLE);
+    lv_obj_center(jog_icon);
+
     // Fester Abstand vom rechten Rand statt Ausrichtung am Knopf: Die Badge
     // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
     // dass die Position neu berechnet werden muss.
     badge = lv_obj_create(parent);
     lv_obj_set_height(badge, 28);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 52 + 8), 8);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(badge, 15, 0);
     lv_obj_set_style_border_width(badge, 0, 0);
