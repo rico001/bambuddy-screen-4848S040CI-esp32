@@ -129,6 +129,11 @@ static void open_settings_cb(lv_event_t *)
     lv_async_call(open_settings_async, nullptr);
 }
 
+// Smart Plugs und Jog-Steuerung haben hier keine Kachel mehr: Beide braucht
+// man vor dem Drucker, nicht in den Einstellungen, und erreichbar sind sie
+// ueber die Kopfzeile des Statusscreens. Sie wohnen aber weiterhin auf dieser
+// Kachel — sie brauchen den Platz einer ganzen Seite, den der Statusscreen
+// nicht hat. Aufgeschlagen werden sie ausschliesslich per Direktsprung.
 static void open_smart_plugs_async(void *)
 {
     transition_pending = false;
@@ -144,35 +149,17 @@ static void open_smart_plugs_async(void *)
     add_back_button();
 }
 
-static void open_smart_plugs_cb(lv_event_t *)
-{
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(open_smart_plugs_async, nullptr);
-}
-
 static void open_jog_async(void *)
 {
     transition_pending = false;
     if (!screen_visible || !root) return;
 
-    // Wie bei den Smart Plugs: Die Ansicht ist auch per Direktsprung vom
-    // Statusscreen erreichbar. War dabei eine andere Unteransicht offen, muss
-    // sie ihre Objekte freigeben — sonst zeigen ihre Timer auf geloeschte
-    // Labels.
     destroy_active_view();
 
     lv_obj_clean(root);
     active_view = VIEW_JOG;
     jog_screen_create(root);
     add_back_button();
-}
-
-static void open_jog_cb(lv_event_t *)
-{
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(open_jog_async, nullptr);
 }
 
 // --- Versionsabgleich ----------------------------------------------------
@@ -348,7 +335,7 @@ static void build_home()
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     lv_obj_t *hint = lv_label_create(root);
-    lv_label_set_text(hint, "Drucker, Verbindung und Display verwalten");
+    lv_label_set_text(hint, "Verbindung und Display verwalten");
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, PAD + 4, 42);
@@ -360,10 +347,6 @@ static void build_home()
                  COL_WIFI, 68, open_wifi_cb);
     add_launcher(LV_SYMBOL_SETTINGS, "Einstellungen", "Bambuddy, MQTT und Darstellung",
                  COL_SETTINGS, 158, open_settings_cb);
-    add_launcher(LV_SYMBOL_POWER, "Smart Plugs", "Steckdosen ein- und ausschalten",
-                 COL_PLUG, 248, open_smart_plugs_cb);
-    add_launcher(LV_SYMBOL_SHUFFLE, "Jog-Steuerung", "Achsen und Extruder manuell bewegen",
-                 COL_JOG, 338, open_jog_cb);
 }
 
 void general_screen_create(lv_obj_t *parent)
