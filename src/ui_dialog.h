@@ -20,6 +20,10 @@ void ui_confirm(const char *title, const char *text,
                 const char *ok_label, uint32_t ok_color,
                 ui_confirm_cb_t on_ok, void *user_data);
 
+// Reine Auskunft: ein Text, ein Knopf zum Schliessen. Nutzt dieselbe Box und
+// damit dieselbe Regel — es steht immer nur ein Dialog gleichzeitig offen.
+void ui_info(const char *title, const char *text, const char *close_label);
+
 // Auswahl aus mehreren Moeglichkeiten, untereinander als volle Zeilen.
 // Die aktuelle Wahl ist hervorgehoben; current ist ihr Index oder -1.
 // on_choose bekommt den gewaehlten Index; beim Abbrechen passiert nichts.
