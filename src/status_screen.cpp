@@ -23,15 +23,21 @@
 static constexpr int PAD = 12;
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD; // 456
 
+// Senkrechtes Budget (CONTENT_H = 454, siehe ui_layout.h):
+//   Kopfzeile        0 ..  46
+//   Auftragskarte   46 .. 282
+//   Temperaturen   290 .. 366
+//   Steuerung      374 .. 422
+//   Fusszeile      ab 434
 static constexpr int JOB_Y = 46;
-static constexpr int JOB_H = 200;
-static constexpr int TEMP_Y = 256;
-static constexpr int TEMP_H = 90;
+static constexpr int JOB_H = 236;
+static constexpr int TEMP_Y = 290;
+static constexpr int TEMP_H = 76;
 static constexpr int TEMP_W = (CONTENT_W - 12) / 2;
-static constexpr int CTRL_Y = 356;
-static constexpr int CTRL_H = 52;
+static constexpr int CTRL_Y = 374;
+static constexpr int CTRL_H = 48;
 static constexpr int CTRL_GAP = 8;
-static constexpr int CTRL_W = (CONTENT_W - 3 * CTRL_GAP) / 4;
+static constexpr int CTRL_W = (CONTENT_W - 4 * CTRL_GAP) / 5;
 
 static constexpr uint32_t COL_NOZZLE = 0xFF7043;
 static constexpr uint32_t COL_BED = 0x42A5F5;
@@ -63,9 +69,13 @@ static lv_obj_t *resume_btn;
 static lv_obj_t *stop_btn;
 static lv_obj_t *light_btn;
 static lv_obj_t *light_btn_lbl;
+static lv_obj_t *speed_btn;
+static lv_obj_t *speed_btn_lbl;
 
 static lv_obj_t *message_lbl;
-static lv_obj_t *updated_lbl;
+// Fehlertext aus update_link(). Die Fusszeile entscheidet danach, was
+// tatsaechlich zu sehen ist — Fehler haben Vorrang vor allem anderen.
+static const char *footer_error = nullptr;
 
 // Vollbilder: Kamera-Livebild und Modellansicht
 static ui_image_view_t cam_view;
@@ -138,6 +148,20 @@ static void format_remaining(int32_t minutes, char *out, size_t out_len)
     }
 }
 
+// Vier geordnete Stufen an einem Knopf: Tippen schaltet weiter, die
+// Beschriftung zeigt die aktuelle. Eine Auswahlliste braeuchte zwei
+// Beruehrungen und eine eigene Zeile — dafuer ist der Platz zu schade.
+static const char *speed_name(int32_t level)
+{
+    switch (level) {
+    case 1:  return "Leise";
+    case 2:  return "Normal";
+    case 3:  return "Sport";
+    case 4:  return "Turbo";
+    default: return "Tempo";
+    }
+}
+
 // ============================================================
 // Aktualisierung
 // ============================================================
@@ -157,6 +181,8 @@ static void set_badge(uint32_t color, const char *text)
 
 static void update_link()
 {
+    footer_error = nullptr;
+
     const bambuddy_link_t link = bambuddy_api_link();
     const char *error = bambuddy_api_error();
 
@@ -165,8 +191,7 @@ static void update_link()
     // obwohl das Display laengst online ist.
     if (WiFi.status() != WL_CONNECTED) {
         set_badge(COL_ERR, LV_SYMBOL_CLOSE "  Kein WLAN");
-        ui_set_text(message_lbl, "Display ist nicht im WLAN.");
-        ui_set_text_color(message_lbl, COL_ERR);
+        footer_error = "Display ist nicht im WLAN.";
         return;
     }
 
@@ -175,13 +200,11 @@ static void update_link()
     const uint32_t beat = bambuddy_api_heartbeat();
     if (beat == 0) {
         set_badge(COL_MUTED, LV_SYMBOL_REFRESH "  Startet");
-        ui_set_text(message_lbl, "");
         return;
     }
     if (millis() - beat > 30000) {
         set_badge(COL_ERR, LV_SYMBOL_WARNING "  Dienst haengt");
-        ui_set_text(message_lbl, "Der Netzwerk-Dienst meldet sich nicht mehr.");
-        ui_set_text_color(message_lbl, COL_ERR);
+        footer_error = "Der Netzwerk-Dienst meldet sich nicht mehr.";
         return;
     }
 
@@ -216,10 +239,7 @@ static void update_link()
     // Kein Hinweistext fuer "Drucker offline" — das steht schon in der
     // Badge oben rechts, zweimal dasselbe ist nur Rauschen.
     if (error[0]) {
-        ui_set_text(message_lbl, error);
-        ui_set_text_color(message_lbl, COL_ERR);
-    } else {
-        ui_set_text(message_lbl, "");
+        footer_error = error;
     }
 }
 
@@ -413,6 +433,10 @@ static void update_controls()
     const bool paused = reachable && strcasecmp(status.state, "PAUSE") == 0;
     const bool has_job = reachable && bambuddy_api_has_active_job();
 
+    // Die Geschwindigkeit laesst sich nur waehrend eines Drucks aendern.
+    set_enabled(speed_btn, running || paused);
+    ui_set_text(speed_btn_lbl, speed_name(status.speed_level));
+
     set_enabled(pause_btn, running);
     set_enabled(resume_btn, paused);
     set_enabled(stop_btn, has_job);
@@ -440,6 +464,21 @@ static void stop_cb(lv_event_t *)
                "fortgesetzt werden.",
                "Weiterdrucken", "Stoppen", COL_ERR,
                stop_confirmed, nullptr);
+}
+
+static void speed_cb(lv_event_t *)
+{
+    const int32_t current = (status.speed_level >= 1 && status.speed_level <= 4)
+                                ? status.speed_level : 2;
+    const int next = (current % 4) + 1;
+
+    // Sofort mitziehen, damit der Knopf nicht bis zur naechsten Antwort
+    // die alte Stufe zeigt. Der naechste Status korrigiert es, falls der
+    // Drucker den Wechsel ablehnt.
+    status.speed_level = next;
+    ui_set_text(speed_btn_lbl, speed_name(next));
+
+    bambuddy_api_send_speed(next);
 }
 
 static void pause_cb(lv_event_t *)
@@ -499,28 +538,39 @@ static void ui_tick_cb(lv_timer_t *)
     update_camera_overlay();
     update_cover_big();
 
-    // Rueckmeldung zum letzten Knopfdruck kurz einblenden — sonst weiss man
-    // nicht, ob der Befehl ueberhaupt rausgegangen ist.
+    // Eine Fusszeile mit klarer Rangfolge: Ein Fehler verdraengt alles,
+    // danach die Rueckmeldung zum letzten Knopfdruck, sonst das Alter der
+    // Daten. Zwei getrennte Zeilen dafuer waeren doppelter Platzverbrauch
+    // fuer eine Information, die man ohnehin nacheinander liest.
+    if (footer_error && footer_error[0]) {
+        ui_set_text(message_lbl, footer_error);
+        ui_set_text_color(message_lbl, COL_ERR);
+        return;
+    }
+
     if (bambuddy_api_command_message_age() < 6000) {
         ui_set_text(message_lbl, bambuddy_api_command_message());
         ui_set_text_color(message_lbl, COL_ACCENT);
+        return;
     }
 
     // Quelle mit anzeigen: per MQTT kommt nur bei Aenderungen etwas rein,
     // da ist ein hohes Alter normal und kein Hinweis auf einen Fehler.
     const char *source = bambuddy_source_mqtt() ? "MQTT" : "HTTP";
+    ui_set_text_color(message_lbl, COL_MUTED);
 
-    if (have_status) {
-        const uint32_t age_s = (millis() - status.updated_ms) / 1000;
-        if (age_s < 5) {
-            ui_set_text_fmt(updated_lbl, "%s - gerade aktualisiert", source);
-        } else if (age_s < 120) {
-            ui_set_text_fmt(updated_lbl, "%s - vor %d s", source, (int)age_s);
-        } else {
-            ui_set_text_fmt(updated_lbl, "%s - vor %d min", source, (int)(age_s / 60));
-        }
+    if (!have_status) {
+        ui_set_text_fmt(message_lbl, "%s - warte auf Daten ...", source);
+        return;
+    }
+
+    const uint32_t age_s = (millis() - status.updated_ms) / 1000;
+    if (age_s < 5) {
+        ui_set_text_fmt(message_lbl, "%s - gerade aktualisiert", source);
+    } else if (age_s < 120) {
+        ui_set_text_fmt(message_lbl, "%s - vor %d s", source, (int)age_s);
     } else {
-        ui_set_text_fmt(updated_lbl, "%s - warte auf Daten ...", source);
+        ui_set_text_fmt(message_lbl, "%s - vor %d min", source, (int)(age_s / 60));
     }
 }
 
@@ -655,16 +705,16 @@ static void build_job_card(lv_obj_t *parent)
     lv_obj_set_width(remaining_lbl, col_w);
     lv_label_set_long_mode(remaining_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(remaining_lbl, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(remaining_lbl, LV_ALIGN_TOP_LEFT, col_x, 134);
+    lv_obj_align(remaining_lbl, LV_ALIGN_TOP_LEFT, col_x, 140);
 
     queue_lbl = muted_label(card, "");
     lv_obj_set_width(queue_lbl, col_w);
     lv_label_set_long_mode(queue_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_align(queue_lbl, LV_ALIGN_TOP_LEFT, col_x, 154);
+    lv_obj_align(queue_lbl, LV_ALIGN_TOP_LEFT, col_x, 166);
 
     progress_bar = lv_bar_create(card);
     lv_obj_set_size(progress_bar, CONTENT_W - 28, 16);
-    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 176);
+    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 202);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(progress_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
@@ -723,6 +773,10 @@ static void build_controls(lv_obj_t *parent)
     light_btn = control_button(parent, PAD + 3 * (CTRL_W + CTRL_GAP), LV_SYMBOL_CHARGE,
                                "Licht an", COL_WARN, light_cb);
     light_btn_lbl = lv_obj_get_child(light_btn, 0);
+
+    speed_btn = control_button(parent, PAD + 4 * (CTRL_W + CTRL_GAP), LV_SYMBOL_REFRESH,
+                               "Tempo", COL_ACCENT, speed_cb);
+    speed_btn_lbl = lv_obj_get_child(speed_btn, 0);
 }
 
 void status_screen_create(lv_obj_t *parent)
@@ -741,10 +795,7 @@ void status_screen_create(lv_obj_t *parent)
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_align(message_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, CTRL_Y + CTRL_H + 4);
-
-    updated_lbl = muted_label(parent, "warte auf Daten ...");
-    lv_obj_align(updated_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -6);
+    lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -4);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);
     lv_timer_set_repeat_count(ui_timer, -1);

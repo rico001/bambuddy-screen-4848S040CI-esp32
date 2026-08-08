@@ -137,4 +137,5 @@ static inline void bambuddy_status_from_json(JsonDocument &doc, bambuddy_status_
         }
     }
     out->awaiting_plate_clear = doc["awaiting_plate_clear"] | false;
+    out->speed_level = doc["speed_level"] | 0;
 }

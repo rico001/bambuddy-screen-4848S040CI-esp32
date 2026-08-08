@@ -185,6 +185,7 @@ static void poll_status()
     filter["chamber_light"] = true;
     add_ams_filter(filter);
     filter["awaiting_plate_clear"] = true;
+    filter["speed_level"] = true;
 
     JsonDocument doc;
     const DeserializationError err =
@@ -297,6 +298,11 @@ static void execute_command(const command_request_t &cmd)
     case BB_CMD_LIGHT_OFF:
         snprintf(path, sizeof(path), "/printers/%d/chamber-light?on=false", bambuddy_printer_id());
         info = {"Licht ausgeschaltet", "Licht konnte nicht ausgeschaltet werden"};
+        break;
+    case BB_CMD_SPEED:
+        snprintf(path, sizeof(path), "/printers/%d/print-speed?mode=%d",
+                 bambuddy_printer_id(), (int)cmd.first);
+        info = {"Geschwindigkeit gesendet", "Geschwindigkeit fehlgeschlagen"};
         break;
     case BB_CMD_JOG_XY:
         snprintf(path, sizeof(path), "/printers/%d/xy-jog?x=%.2f&y=%.2f",
@@ -640,6 +646,12 @@ static bool send_motion_command(bambuddy_cmd_t type, float first, float second =
     if (!cmd_queue) return false;
     const command_request_t request = {type, first, second};
     return xQueueSend(cmd_queue, &request, 0) == pdTRUE;
+}
+
+bool bambuddy_api_send_speed(int mode)
+{
+    if (mode < 1 || mode > 4) return false;
+    return send_motion_command(BB_CMD_SPEED, (float)mode);
 }
 
 bool bambuddy_api_send_xy_jog(float x, float y)
