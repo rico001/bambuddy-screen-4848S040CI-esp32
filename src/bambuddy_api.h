@@ -59,6 +59,7 @@ struct bambuddy_status_t {
     int32_t tray_now;
     bambuddy_ams_unit_t ams[BB_AMS_MAX_UNITS];
     bool awaiting_plate_clear; // Drucker wartet auf "Platte ist frei"
+    int32_t speed_level;       // 1=leise 2=normal 3=sport 4=turbo
     uint32_t updated_ms;    // millis() der letzten erfolgreichen Abfrage
 };
 
@@ -76,6 +77,7 @@ enum bambuddy_cmd_t {
     BB_CMD_JOG_Z,
     BB_CMD_JOG_EXTRUDER,
     BB_CMD_HOME,
+    BB_CMD_SPEED,   // Druckgeschwindigkeit 1=leise 2=normal 3=sport 4=turbo
 };
 
 // Startet den Hintergrund-Task. Nach settings_apply_saved() und
@@ -84,6 +86,9 @@ void bambuddy_api_start();
 
 // Befehl einreihen. Liefert false, wenn der Task nicht laeuft.
 bool bambuddy_api_send_command(bambuddy_cmd_t cmd);
+
+// Druckgeschwindigkeit umschalten (1..4).
+bool bambuddy_api_send_speed(int mode);
 bool bambuddy_api_send_xy_jog(float x, float y);
 bool bambuddy_api_send_z_jog(float distance);
 bool bambuddy_api_send_extruder_jog(float distance);

@@ -6,14 +6,14 @@
 //
 // Bambuddy liefert es als 512x512-PNG mit Transparenz — dekodiert waere das
 // 1 MB. Deshalb wird der PNG-Datenstrom pixelweise durchgereicht (pngle) und
-// dabei direkt auf 128x128 heruntergerechnet: 32 KB statt 1 MB. Die
-// Transparenz wird gegen COVER_BG verrechnet, dieselbe Farbe hat die Kachel
-// im Screen — dadurch wirkt das Bild freigestellt.
+// dabei direkt auf die Anzeigegroesse heruntergerechnet: 55 KB statt 1 MB.
+// Die Transparenz wird gegen COVER_BG verrechnet, dieselbe Farbe hat die
+// Kachel im Screen — dadurch wirkt das Bild freigestellt.
 
-static constexpr uint16_t COVER_SIZE = 128;
+static constexpr uint16_t COVER_SIZE = 168;
 
 // Fuers Vollbild wird dasselbe PNG noch einmal geholt und in echter Groesse
-// dekodiert. Ein hochskaliertes 128er-Bild waere klobig, und Skalieren beim
+// dekodiert. Ein hochskaliertes kleines Bild waere klobig, und Skalieren beim
 // Zeichnen kostet jedes Mal aufs Neue Rechenzeit und Speicherbandbreite.
 static constexpr uint16_t COVER_BIG_SIZE = 400;
 
