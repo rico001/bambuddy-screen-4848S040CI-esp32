@@ -69,18 +69,18 @@ static void set_message(const char *text)
 
 static void fetch_queue()
 {
-    BambuddyHttp session;
+    BambuddyHttp &session = bambuddy_http_shared();
     // Nur anstehende Auftraege dieses Druckers — laufende und erledigte
     // gehoeren nicht in eine Warteschlange.
     const char *url = bambuddy_url("/queue/?printer_id=%d&status=pending",
                                    bambuddy_printer_id());
-    if (!session.begin(url)) return;
+    if (!session.begin(url, true)) return;
 
     HTTPClient &http = session.http();
 
     const int code = http.GET();
     if (code != 200) {
-        session.end();
+        session.end(false);
         Serial.printf("[Queue] HTTP %d\n", code);
         last_error_ms = millis();
         return;
@@ -103,7 +103,7 @@ static void fetch_queue()
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
 
     if (err) {
         Serial.printf("[Queue] Antwort nicht lesbar: %s\n", err.c_str());
@@ -127,7 +127,7 @@ static void fetch_queue()
 
         // Auftraege koennen aus dem Archiv oder aus der Bibliothek kommen
         const char *name = obj["archive_name"] | obj["library_file_name"] | "Unbenannt";
-        strncpy(it.name, name, sizeof(it.name) - 1);
+        bambuddy_copy_field(it.name, sizeof(it.name), name);
 
         it.archive_id = obj["archive_id"] | 0;
         it.print_seconds = obj["print_time_seconds"] | 0;
@@ -156,14 +156,14 @@ static void fetch_queue()
 
 static void fetch_ams()
 {
-    BambuddyHttp session;
+    BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/printers/%d/status", bambuddy_printer_id());
-    if (!session.begin(url)) return;
+    if (!session.begin(url, true)) return;
 
     HTTPClient &http = session.http();
 
     if (http.GET() != 200) {
-        session.end();
+        session.end(false);
         return;
     }
 
@@ -179,7 +179,7 @@ static void fetch_ams()
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
     if (err) return;
 
     int count = 0;
@@ -221,13 +221,13 @@ static void fetch_ams()
 
 static bool send(const char *method, const char *url)
 {
-    BambuddyHttp session;
-    if (!session.begin(url)) return false;
+    BambuddyHttp &session = bambuddy_http_shared();
+    if (!session.begin(url, true)) return false;
 
     HTTPClient &http = session.http();
 
     const int code = http.sendRequest(method, (uint8_t *)nullptr, 0);
-    session.end();
+    session.end(false);
 
     if (code < 200 || code >= 300) {
         Serial.printf("[Queue] %s %s -> HTTP %d\n", method, url, code);

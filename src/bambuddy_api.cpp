@@ -21,6 +21,7 @@
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "settings_screen.h"
+#include "ui_watch.h"
 
 // ============================================================
 // Geteilter Zustand zwischen Netzwerk-Task und UI
@@ -44,7 +45,6 @@ struct command_request_t {
 static char cmd_message[64] = "";
 static volatile uint32_t cmd_message_ms = 0;
 
-static constexpr uint32_t HTTP_TIMEOUT_MS = 8000;
 static constexpr uint32_t RETRY_AFTER_ERROR_MS = 5000;
 static constexpr uint32_t AMS_REFRESH_MS = 30000;
 static volatile bool ams_visible = false;
@@ -136,9 +136,9 @@ static void poll_status()
         return;
     }
 
-    BambuddyHttp session;
+    BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/printers/%d/status", bambuddy_printer_id());
-    if (!session.begin(url)) {
+    if (!session.begin(url, true)) {
         set_error(BB_LINK_NO_SERVER, "Ungueltige Server-URL");
         return;
     }
@@ -148,17 +148,24 @@ static void poll_status()
     const int code = http.GET();
 
     if (code == 401 || code == 403) {
-        session.end();
+        session.end(false);
         set_error(BB_LINK_UNAUTHORIZED, "API-Key abgelehnt");
         return;
     }
     if (code != 200) {
-        session.end();
+        session.end(false);
         char msg[64];
         if (code < 0) {
             snprintf(msg, sizeof(msg), "Server nicht erreichbar (%d)", code);
         } else {
             snprintf(msg, sizeof(msg), "Server antwortet mit HTTP %d", code);
+        }
+        // Bei Transportfehlern (negativer Code) den internen Heap
+        // mitschreiben: geht der aus, scheitern Sockets, und das sieht von
+        // aussen aus wie ein haengender Server.
+        if (code < 0) {
+            Serial.printf("[Bambuddy] Status HTTP %d, intern frei=%u\n", code,
+                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
         }
         set_error(BB_LINK_NO_SERVER, msg);
         return;
@@ -182,7 +189,7 @@ static void poll_status()
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
 
     if (err) {
         set_error(BB_LINK_NO_SERVER, "Antwort nicht lesbar");
@@ -204,15 +211,15 @@ static void fetch_ams_status()
     last_ams_fetch_ms = millis();
     if (WiFi.status() != WL_CONNECTED || !bambuddy_config_complete()) return;
 
-    BambuddyHttp session;
+    BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/printers/%d/status", bambuddy_printer_id());
-    if (!session.begin(url)) return;
+    if (!session.begin(url, true)) return;
 
     HTTPClient &http = session.http();
 
     const int code = http.GET();
     if (code != 200) {
-        session.end();
+        session.end(false);
         Serial.printf("[AMS] Status HTTP %d\n", code);
         return;
     }
@@ -223,7 +230,7 @@ static void fetch_ams_status()
     JsonDocument doc;
     const DeserializationError err =
         deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
-    session.end();
+    session.end(false);
     if (err) {
         Serial.printf("[AMS] Status nicht lesbar: %s\n", err.c_str());
         return;
@@ -324,9 +331,9 @@ static void execute_command(const command_request_t &cmd)
 
     // Steuerbefehle gehen immer ueber die REST-API — auch wenn der Status
     // per MQTT kommt. Der API-Key muss dafuer "Drucker steuern" duerfen.
-    BambuddyHttp session;
+    BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("%s", path);
-    if (!session.begin(url)) {
+    if (!session.begin(url, true)) {
         set_command_message(info.fail_text);
         return;
     }
@@ -334,7 +341,7 @@ static void execute_command(const command_request_t &cmd)
     HTTPClient &http = session.http();
 
     const int code = http.POST("");
-    session.end();
+    session.end(false);
 
     if (code >= 200 && code < 300) {
         Serial.printf("[Bambuddy] Befehl OK: %s\n", url);
@@ -356,23 +363,50 @@ static void execute_command(const command_request_t &cmd)
 
 static void api_task(void *)
 {
-    bool was_mqtt = false;
+
+    uint32_t next_heap_log_ms = 0;
+
+    bool ui_hang_reported = false;
 
     for (;;) {
         task_heartbeat_ms = millis();
-        const bool use_mqtt = bambuddy_source_mqtt();
 
-        // Beim Umschalten die alte Quelle sauber schliessen
-        if (was_mqtt && !use_mqtt) bambuddy_mqtt_stop();
-        was_mqtt = use_mqtt;
+        // Der UI-Thread laeuft auf dem anderen Kern. Bleibt sein
+        // Lebenszeichen aus, ist er haengengeblieben — dann schreiben wir
+        // von hier aus heraus, was er zuletzt getan hat.
+        if (ui_watch_alive_ms && millis() - ui_watch_alive_ms > 3000) {
+            if (!ui_hang_reported) {
+                ui_hang_reported = true;
+                Serial.printf("\n*** UI haengt seit %u ms — letzter Schritt: %s ***\n",
+                              (unsigned)(millis() - ui_watch_alive_ms),
+                              ui_watch_step ? ui_watch_step : "?");
+            }
+        } else {
+            ui_hang_reported = false;
+        }
+
+        // Alle 60 Sekunden den internen Heap protokollieren. Sinkt der Wert
+        // ueber Stunden, liegt ein Leck vor — bei zufaelligen Neustarts ist
+        // das die erste Frage, und ohne Verlauf kann man sie nicht
+        // beantworten.
+        if (millis() >= next_heap_log_ms) {
+            next_heap_log_ms = millis() + 60000;
+            // Stack-Reserve mitloggen: zu klein bedeutet Absturz, zu gross
+            // verschenkt internen RAM. Ohne Messwert ist beides Raten.
+            Serial.printf("[Speicher] intern frei=%u groesster Block=%u "
+                          "Stack-Reserve api=%u\n",
+                          (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                          (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                          (unsigned)uxTaskGetStackHighWaterMark(nullptr));
+        }
+        const bool use_mqtt = bambuddy_source_mqtt();
 
         uint32_t wait_ms;
 
         if (use_mqtt) {
-            // MQTT liefert von selbst — wir muessen nur die Verbindung
-            // bedienen und koennen entsprechend eng takten.
-            bambuddy_mqtt_loop();
-            wait_ms = 50;
+            // MQTT laeuft in einem eigenen Task und liefert von selbst.
+            // Hier ist dann nichts abzufragen — nur die Bildabrufe unten.
+            wait_ms = 1000;
         } else {
             poll_status();
             if (bambuddy_api_link() != BB_LINK_OK) {
@@ -387,7 +421,12 @@ static void api_task(void *)
         // Modellbild des Auftrags — laedt sich nur nach, wenn ein anderer Job
         // laeuft, nicht im Poll-Takt. Der Abruf geht immer ueber HTTP, auch
         // wenn der Status per MQTT kommt.
-        if (bambuddy_api_link() == BB_LINK_OK) {
+        // Bewusst NICHT an bambuddy_api_link() gekoppelt: Diese Abrufe gehen
+        // ueber HTTP und haben mit der Statusquelle nichts zu tun. Haengte
+        // man sie daran, wuerde ein MQTT-Aussetzer auch Archiv, Warteschlange
+        // und Smart Plugs lahmlegen — sie laden dann "ewig", obwohl der
+        // Server erreichbar ist.
+        if (WiFi.status() == WL_CONNECTED && bambuddy_config_complete()) {
             char job[sizeof(shared_status.job)];
             bool active;
 
@@ -445,9 +484,12 @@ static void api_task(void *)
 // ============================================================
 
 // Der Stack muss in den internen RAM — dort ist es eng, weil LVGL einen
-// statischen Pool belegt. Die TLS-Puffer liegen dank der mbedTLS-Umleitung
-// im PSRAM, deshalb reichen 8 KB fuer HTTP-Client und Handshake.
-static constexpr uint32_t TASK_STACK_BYTES = 10240;
+// statischen Pool und das Display einen 128-KB-DMA-Puffer belegen.
+//
+// Gemessen bleiben von 12 KB ueber 11 KB unbenutzt (Stack-Reserve im
+// [Speicher]-Log), der Task braucht also gut 1 KB. 8 KB sind auch mit
+// TLS-Handshake reichlich und geben 4 KB zurueck.
+static constexpr uint32_t TASK_STACK_BYTES = 8192;
 
 static bool try_start_task()
 {
@@ -496,6 +538,8 @@ void bambuddy_api_start()
 
     mbedtls_platform_set_calloc_free(psram_calloc, psram_free);
 
+    bambuddy_mqtt_start();
+
     if (!try_start_task()) {
         lv_timer_t *retry = lv_timer_create(retry_start_cb, 5000, nullptr);
         lv_timer_set_repeat_count(retry, -1);
@@ -511,8 +555,13 @@ void bambuddy_api_publish_status(const bambuddy_status_t *status)
     // per MQTT). Beim ersten echten Druck zeigt dieser Log, ob das stimmt:
     // steht hier 90 und es sind noch anderthalb Stunden, passt es.
     if (state_is_printing(status->state)) {
-        Serial.printf("[Bambuddy] state=%s progress=%.1f%% remaining_time=%d (roh)\n",
-                      status->state, status->progress, (int)status->remaining_min);
+        // Bewusst ohne %f: Die Fliesskomma-Formatierung von printf braucht
+        // ueber _dtoa_r mehrere Kilobyte Stack und allokiert dabei. Im
+        // MQTT-Task mit seinem kleinen Stack reicht das nicht — und fuer
+        // eine Prozentangabe ist die Nachkommastelle ohnehin belanglos.
+        Serial.printf("[Bambuddy] state=%s progress=%d%% remaining_time=%d (roh)\n",
+                      status->state, (int)(status->progress + 0.5f),
+                      (int)status->remaining_min);
     }
 
     xSemaphoreTake(status_mutex, portMAX_DELAY);

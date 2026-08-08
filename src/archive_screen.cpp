@@ -11,6 +11,7 @@
 #include "ui_image_view.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_watch.h"
 
 static constexpr int PAD = 12;
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD;
@@ -273,8 +274,15 @@ static void next_cb(lv_event_t *)
 
 static void ui_tick_cb(lv_timer_t *)
 {
+    // Nicht umbauen, solange eine Rueckfrage offen ist: Der Umbau loescht
+    // die Zeile samt dem Knopf, den der Finger gerade beruehrt hat. Ein
+    // Objekt zu entfernen, waehrend LVGL die Beruehrung darauf noch
+    // verarbeitet, fuehrt in einen haengenden Bildaufbau.
+    if (ui_confirm_is_open()) return;
+
     if (bambuddy_archive_take_fresh()) {
         shown_count = bambuddy_archive_copy(shown, BB_ARCHIVE_PAGE_SIZE);
+        ui_watch("archiv:rebuild");
         rebuild_list();
     }
 
@@ -283,8 +291,11 @@ static void ui_tick_cb(lv_timer_t *)
         rebuild_list();
     }
 
+    ui_watch("archiv:preview");
     update_preview();
+    ui_watch("archiv:pager");
     update_pager();
+    ui_watch("archiv:tick-ende");
 
     if (bambuddy_archive_message_age() < 6000) {
         ui_set_text(message_lbl, bambuddy_archive_message());

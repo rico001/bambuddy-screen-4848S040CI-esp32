@@ -2,6 +2,7 @@
 
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_watch.h"
 
 static void close_cb(lv_event_t *e)
 {
@@ -52,6 +53,7 @@ void ui_image_view_open(ui_image_view_t *view, int canvas_w, int canvas_h,
                         ui_image_view_close_cb_t on_close)
 {
     if (!view) return;
+    ui_watch("bild:oeffnen");
     if (!view->overlay) build(view, canvas_w, canvas_h);
 
     view->on_close = on_close;
@@ -82,6 +84,7 @@ void ui_image_view_set_frame(ui_image_view_t *view, void *buf, int w, int h)
 {
     if (!view || !view->canvas || !buf) return;
 
+    ui_watch("bild:puffer");
     lv_canvas_set_buffer(view->canvas, buf, w, h, LV_COLOR_FORMAT_RGB565);
     lv_obj_remove_flag(view->canvas, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(view->hint, LV_OBJ_FLAG_HIDDEN);

@@ -22,12 +22,25 @@
    MEMORY SETTINGS
  *=========================*/
 
-/*1: use custom malloc/free, 0: use the built-in `lv_mem_alloc()` and `lv_mem_free()`*/
-#define LV_USE_STDLIB_MALLOC    LV_STDLIB_BUILTIN
+/* Kein fester eigener Pool, sondern der normale Heap des Systems.
+ *
+ * Der eingebaute Allokator belegt einen festen Block im internen RAM — und
+ * der ist auf diesem Board bereits durch den 128-KB-DMA-Puffer des Displays
+ * und den WLAN-Stack knapp. Beide Groessen gegeneinander abzuwaegen fuehrt
+ * in eine Sackgasse: Ein grosser Pool laesst Sockets scheitern, ein kleiner
+ * laesst LVGL beim Anfordern eines Zeichenpuffers NULL bekommen — und LVGL
+ * prueft das nicht, sondern schreibt an Adresse 0 (Absturz im lv_memset).
+ *
+ * Mit LV_STDLIB_CLIB geht beides in denselben Heap: Kleine Anforderungen
+ * (Objekte, Styles) bleiben intern, alles ueber 4 KB legt ESP-IDF
+ * automatisch ins PSRAM — also genau die grossen Zeichenpuffer. Damit
+ * entfaellt die Abwaegung, und der interne RAM steht dem Netzwerk zur
+ * Verfuegung. */
+#define LV_USE_STDLIB_MALLOC    LV_STDLIB_CLIB
 
-/* Der grosse Zeichenpuffer liegt im PSRAM; fuer LVGL-Objekte bleibt ein
- * fester interner Pool mit vorhersagbarer Zugriffszeit. */
-#define LV_MEM_SIZE (96U * 1024U)          /*[bytes]*/
+/* Ohne eigenen Pool wirkungslos — bleibt fuer den Fall stehen, dass wieder
+ * auf LV_STDLIB_BUILTIN umgestellt wird. */
+#define LV_MEM_SIZE (56U * 1024U)          /*[bytes]*/
 
 /*Size of the memory expand for `lv_malloc()` in bytes*/
 #define LV_MEM_POOL_EXPAND_SIZE 0

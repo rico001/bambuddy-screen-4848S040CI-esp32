@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <esp32_smartdisplay.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
 
 #include "ams_screen.h"
 #include "bambuddy_api.h"
@@ -12,6 +14,7 @@
 #include "status_bar.h"
 #include "status_screen.h"
 #include "ui_layout.h"
+#include "ui_watch.h"
 #include "wifi_screen.h"
 
 // --- Globals ---
@@ -34,6 +37,27 @@ static void tile_changed_cb(lv_event_t *)
     general_screen_set_visible(general_visible);
 }
 
+// Beim Start sagen, warum zuletzt neu gestartet wurde. Ohne diese Zeile
+// bleibt nach einem unbeobachteten Reset nur Raten: Absturz, Watchdog und
+// Spannungseinbruch sehen im Nachhinein identisch aus.
+static void log_reset_reason()
+{
+    const char *text;
+    switch (esp_reset_reason()) {
+    case ESP_RST_POWERON:  text = "Einschalten"; break;
+    case ESP_RST_SW:       text = "Neustart durch Software"; break;
+    case ESP_RST_PANIC:    text = "ABSTURZ (Exception/Panic)"; break;
+    case ESP_RST_TASK_WDT: text = "Task-Watchdog: ein Task hat blockiert"; break;
+    case ESP_RST_INT_WDT:  text = "Interrupt-Watchdog"; break;
+    case ESP_RST_WDT:      text = "sonstiger Watchdog"; break;
+    case ESP_RST_BROWNOUT: text = "SPANNUNGSEINBRUCH (Netzteil/USB-Kabel)"; break;
+    case ESP_RST_DEEPSLEEP:text = "Aufwachen aus Deep Sleep"; break;
+    case ESP_RST_EXT:      text = "Reset-Pin"; break;
+    default:               text = "unbekannt"; break;
+    }
+    Serial.printf("\n[Start] Letzter Neustart: %s\n", text);
+}
+
 // --- Setup & Loop ---
 auto lv_last_tick = millis();
 
@@ -41,20 +65,23 @@ auto lv_last_tick = millis();
 // und der interne RAM sind die beiden Groessen, an denen dieses Board haengt.
 static void log_memory(const char *stage)
 {
-    lv_mem_monitor_t mon;
-    lv_mem_monitor(&mon);
-    Serial.printf("[Speicher] %s — LVGL benutzt %u von %u Bytes (%u%%), "
-                  "intern frei %u, groesster Block %u\n",
+    // LVGL benutzt jetzt den System-Heap, hat also keinen eigenen Pool mehr,
+    // ueber den sich berichten liesse. Entscheidend ist ohnehin der interne
+    // RAM: an ihm haengen Sockets, Task-Stacks und die Zeichenpuffer.
+    Serial.printf("[Speicher] %s — intern frei %u, groesster Block %u, "
+                  "PSRAM frei %u\n",
                   stage,
-                  (unsigned)(mon.total_size - mon.free_size), (unsigned)mon.total_size,
-                  (unsigned)mon.used_pct,
                   (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
 }
 
 void setup()
 {
     Serial.begin(115200);
+    delay(200); // kurz warten, sonst verschluckt der Monitor die erste Zeile
+    log_reset_reason();
+
     smartdisplay_init();
 
     // Theme vor dem Bau der Screens setzen, sonst blitzt kurz das falsche auf
@@ -100,6 +127,13 @@ void setup()
     bambuddy_api_start();
 
     log_memory("Netzwerk-Task gestartet");
+
+    // Den UI-Thread ueberwachen. Bleibt lv_timer_handler laenger als zehn
+    // Sekunden haengen, erzwingt der Watchdog einen Panic mit Backtrace —
+    // damit wird aus einem stummen Freeze eine Zeilennummer. Zehn Sekunden
+    // sind reichlich: ein voller Bildaufbau dauert Millisekunden.
+    esp_task_wdt_init(10, true);
+    esp_task_wdt_add(nullptr);
 }
 
 void loop()
@@ -107,7 +141,11 @@ void loop()
     auto const now = millis();
     lv_tick_inc(now - lv_last_tick);
     lv_last_tick = now;
+    ui_watch_alive_ms = now;
+    ui_watch("lvgl");
     lv_timer_handler();
+    ui_watch("loop");
+    esp_task_wdt_reset();
 
     // Gibt dem WiFi/TCP-Task auf Core 0 CPU-Zeit — ohne yield kann der
     // WiFi-Stack Pakete verpassen, wenn LVGL-Rendering Core 1 blockiert.

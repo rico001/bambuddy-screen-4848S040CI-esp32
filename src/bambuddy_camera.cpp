@@ -25,12 +25,6 @@ static bool have_frame = false;
 static uint8_t *jpeg_buf = nullptr;
 static uint32_t last_fetch_ms = 0;
 
-// Verbindung ueber die Abrufe hinweg offen halten: ein TLS-Handshake alle
-// drei Sekunden kostet spuerbar Rechenzeit und Speicherbandbreite — und
-// beides fehlt dann dem Display. Bei http:// entfaellt der Handshake,
-// die offene Verbindung spart aber trotzdem den Aufbau.
-static BambuddyHttp cam_session;
-
 // Groesse des dekodierten Bildes (Quelle geteilt durch den TJpgDec-Faktor)
 static uint32_t dec_w = 0;
 static uint32_t dec_h = 0;
@@ -109,25 +103,29 @@ static int fetch_snapshot()
     // Der Snapshot braucht den Kamera-Token, nicht den API-Key.
     const char *url = bambuddy_url("/printers/%d/camera/snapshot?token=%s",
                                    bambuddy_printer_id(), bambuddy_cam_token());
+    // Gemeinsame, offen gehaltene Verbindung: lwip hat nur 16 TCP-Plaetze,
+    // und jeder geschlossene bleibt eine Minute belegt. Ein eigener Aufbau
+    // alle drei Sekunden wuerde den Vorrat aufbrauchen.
+    BambuddyHttp &cam_session = bambuddy_http_shared();
     if (!cam_session.begin(url, true)) return -1;
 
     HTTPClient &http = cam_session.http();
 
     const int code = http.GET();
     if (code != 200) {
-        cam_session.end();
+        cam_session.end(false);
         return code;
     }
 
     const int len = http.getSize();
     if (len > 0 && (size_t)len > MAX_JPEG_BYTES) {
-        cam_session.end();
+        cam_session.end(false);
         return -2;
     }
 
     WiFiClient *stream = http.getStreamPtr();
     size_t read_total = 0;
-    const uint32_t deadline = millis() + 10000;
+    const uint32_t deadline = millis() + 8000;
 
     while (millis() < deadline && read_total < MAX_JPEG_BYTES) {
         if (len > 0 && read_total >= (size_t)len) break;
@@ -161,8 +159,8 @@ void bambuddy_camera_set_active(bool value)
         last_fetch_ms = 0; // beim Oeffnen sofort holen
         last_error[0] = '\0';
     } else {
-        // Beim Schliessen die offen gehaltene Verbindung wirklich beenden
-        cam_session.end(true);
+        // Verbindung bleibt offen — sie gehoert jetzt allen Abrufen
+        // gemeinsam und wird gleich vom naechsten gebraucht.
     }
 }
 

@@ -10,6 +10,18 @@
 // (lokal im Netz) erreichbar sein. Ein TLS-Client an einem Klartext-Port
 // scheitert schon beim Handshake — deshalb entscheidet das Schema der URL,
 // welcher Client benutzt wird, und nicht eine feste Annahme im Code.
+// Gemeinsame, dauerhaft offene Verbindung fuer alle wiederkehrenden Abrufe.
+//
+// lwip hat nur 16 TCP-Plaetze, und eine geschlossene Verbindung belegt ihren
+// Platz noch 60 Sekunden (TIME_WAIT). Bei einem eigenen Verbindungsaufbau je
+// Abruf sind das rund 15 pro Minute — der Vorrat ist dann dauerhaft leer,
+// und es scheitern nicht nur HTTP-Abrufe, sondern auch DNS.
+//
+// Alle Abrufe laufen im selben Netzwerk-Task nacheinander und sprechen
+// denselben Host an. Eine offen gehaltene Verbindung genuegt also.
+class BambuddyHttp;
+BambuddyHttp &bambuddy_http_shared();
+
 class BambuddyHttp {
 public:
     // Setzt zugleich den API-Key-Header: den brauchen alle Endpunkte ausser
@@ -17,11 +29,6 @@ public:
     // stoert er nicht. Damit steht die Anmeldung an genau einer Stelle.
     // keep_alive: Verbindung nach end(false) offen halten (fuer Bildfolgen).
     bool begin(const char *url, bool keep_alive = false);
-
-    // Fertige Anfragen ohne Rumpf. Liefern den HTTP-Code (< 0 = Transportfehler).
-    int get();
-    int post(const char *body = "");
-    int del();
 
     HTTPClient &http() { return http_; }
 
@@ -31,8 +38,6 @@ public:
     // Bricht einen gerade blockierenden Transfer durch Schliessen des
     // zugrunde liegenden Sockets ab. Das Objekt bleibt danach verwendbar.
     void cancel();
-
-    bool is_tls() const { return is_tls_; }
 
 private:
     void add_auth();

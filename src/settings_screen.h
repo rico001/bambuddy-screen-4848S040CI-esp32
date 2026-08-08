@@ -13,8 +13,6 @@ void settings_screen_create(lv_obj_t *parent);
 void settings_screen_destroy();
 
 // --- Werte fuer andere Module --------------------------------------------
-bool settings_dark_mode();
-
 // Abfrageintervall fuer den Druckerstatus. Waehrend eines Drucks kurz,
 // im Leerlauf laenger (spart Funk und Serverlast).
 uint32_t settings_poll_interval_ms();

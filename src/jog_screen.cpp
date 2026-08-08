@@ -53,7 +53,10 @@ static void set_enabled(lv_obj_t *button, bool enabled)
 static void warning_close()
 {
     if (warning_box) {
-        lv_msgbox_close(warning_box);
+        // Asynchron, weil der Aufruf aus dem Klick-Callback eines Knopfes
+        // in dieser Box kommt: sofortiges Loeschen zieht LVGL den Boden
+        // unter der laufenden Ereignisverarbeitung weg.
+        lv_msgbox_close_async(warning_box);
         warning_box = nullptr;
     }
 }

@@ -7,6 +7,7 @@
 #include "ui_dialog.h"
 #include "ui_layout.h"
 #include "ui_util.h"
+#include "ui_watch.h"
 
 static constexpr int PAD = 12;
 static constexpr int HEADER_H = 54;
@@ -142,6 +143,12 @@ static void rebuild_list()
 
 static void ui_tick_cb(lv_timer_t *)
 {
+    // Nicht umbauen, solange eine Rueckfrage offen ist: Der Umbau loescht
+    // die Zeile samt dem Knopf, den der Finger gerade beruehrt hat. Ein
+    // Objekt zu entfernen, waehrend LVGL die Beruehrung darauf noch
+    // verarbeitet, fuehrt in einen haengenden Bildaufbau.
+    if (ui_confirm_is_open()) return;
+
     if (bambuddy_smart_plugs_take_fresh()) {
         shown_count = bambuddy_smart_plugs_copy(shown, BB_SMART_PLUG_MAX_ITEMS);
         list_loaded = true;

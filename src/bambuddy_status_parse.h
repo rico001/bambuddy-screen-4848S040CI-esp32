@@ -23,10 +23,39 @@ static inline uint32_t bambuddy_parse_hex_color(const char *value)
     return (uint32_t)strtoul(buf, nullptr, 16);
 }
 
+// Text uebernehmen und dabei sauber kuerzen.
+//
+// strncpy schneidet auf Byte-Ebene ab. Namen aus der API enthalten aber
+// UTF-8: Ein Schnitt mitten in einem Mehrbytezeichen hinterlaesst eine
+// ungueltige Folge, und LVGL kommt beim Umbrechen solcher Texte nicht mehr
+// heraus — die Oberflaeche steht dann, ohne abzustuerzen. Deshalb ein
+// angefangenes Zeichen am Ende entfernen.
 static inline void bambuddy_copy_field(char *dst, size_t dst_len, const char *src)
 {
-    strncpy(dst, src ? src : "", dst_len - 1);
+    if (!dst || dst_len == 0) return;
+    if (!src) {
+        dst[0] = '\0';
+        return;
+    }
+
+    strncpy(dst, src, dst_len - 1);
     dst[dst_len - 1] = '\0';
+
+    size_t len = strlen(dst);
+    if (len == 0) return;
+
+    // Zurueck bis zum Startbyte des letzten Zeichens
+    size_t start = len - 1;
+    while (start > 0 && ((unsigned char)dst[start] & 0xC0) == 0x80) start--;
+
+    const unsigned char lead = (unsigned char)dst[start];
+    size_t expected = 1;
+    if ((lead & 0xE0) == 0xC0) expected = 2;
+    else if ((lead & 0xF0) == 0xE0) expected = 3;
+    else if ((lead & 0xF8) == 0xF0) expected = 4;
+
+    // Angefangen, aber nicht vollstaendig? Dann ganz weglassen.
+    if (len - start < expected) dst[start] = '\0';
 }
 
 static inline uint8_t bambuddy_hex_nibble(char c)
