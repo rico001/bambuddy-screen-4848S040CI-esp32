@@ -59,18 +59,32 @@ Die interaktive Fassung liegt unter `{BASE_URL}/docs`. Die lokale Kopie in
 `bambuddy-docs/api/api-docs.json` ist der Stand, gegen den dieser Code
 entwickelt wurde — sie wird mit diesem Schritt aktualisiert.
 
-**3. Genutzte Endpunkte gegen die Beschreibung prüfen.**
-Alle Aufrufe laufen über `bambuddy_url()`, sind also vollständig auffindbar:
+**3. Endpunkte, Parameter und Felder prüfen.**
+Es genügt nicht, dass ein Pfad noch existiert — er muss sich **genauso
+benutzen lassen wie bisher**. Deshalb alle drei Ebenen abgleichen:
 
 ```bash
-grep -rn 'bambuddy_url("' src/*.cpp
+grep -rn 'bambuddy_url("' src/*.cpp        # aufgerufene Endpunkte
+grep -rn 'filter\[' src/*.cpp              # ausgewertete Antwortfelder
 ```
 
-Für jeden Endpunkt prüfen: Existiert er noch? Haben sich Pflichtparameter,
-Methode oder Antwortfelder geändert? Die ausgewerteten Antwortfelder stehen
-in den `JsonDocument filter`-Blöcken der jeweiligen Datei — auch dort
-vergleichen, ein stillschweigend entferntes Feld fällt sonst erst im Betrieb
-auf.
+- **Endpunkt:** Pfad und HTTP-Methode noch vorhanden?
+- **Parameter:** Heißen die mitgeschickten Query-Parameter noch gleich, sind
+  sie weiterhin erlaubt, und ist keiner neu als Pflicht dazugekommen?
+  Ebenso die Rumpffelder bei `POST /queue/`
+  (`printer_id`, `archive_id`, `manual_start`).
+- **Antwortfelder:** Existieren alle Felder aus den `JsonDocument
+  filter`-Blöcken noch im zugehörigen Schema (`PrinterStatus`,
+  `PrintQueueItemResponse`, `ArchiveResponse`, Smart-Plug-Antwort)?
+
+Der letzte Punkt ist der heimtückische: Ein umbenanntes oder entferntes
+Antwortfeld erzeugt keinen Fehler, sondern stillschweigend eine Null. Auf
+dem Display steht dann dauerhaft „0 %" oder „Unbekannt", und niemand weiß,
+warum. Deshalb Feld für Feld gegen das Schema prüfen, nicht nur den Pfad.
+
+Ändert sich etwas an Bedeutung oder Einheit eines Feldes (etwa Sekunden
+statt Minuten), fällt das in keinem Schema auf — bei verdächtigen Werten
+gegen die Anzeige des Druckers gegenprüfen.
 
 **4. Abweichungen im Code nachziehen.**
 Endpunkte, Parameter und Feldnamen anpassen. Bei entfernten Endpunkten nach
