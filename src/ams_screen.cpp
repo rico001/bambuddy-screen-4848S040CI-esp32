@@ -21,6 +21,7 @@ static constexpr uint32_t COL_ERR = 0xE53935;
 static constexpr uint32_t COL_ACCENT = 0x2196F3;
 static constexpr uint32_t COL_MUTED = 0x9E9E9E;
 static constexpr uint32_t COL_EMPTY = 0x30363D;
+static constexpr uint32_t COL_BUTTON = 0x546E7A; // wie COL_NEUTRAL im Theme
 
 static lv_obj_t *root = nullptr;
 static lv_obj_t *list_cont = nullptr;
@@ -93,8 +94,6 @@ static void unit_name(const bambuddy_ams_unit_t &unit, char *out, size_t out_len
     }
 }
 
-// Antippen oeffnet die Filamentkonfiguration fuer genau diesen Slot. Welcher
-// gemeint ist, steckt in den Nutzdaten des Knopfes: AMS oben, Fach unten.
 static void reload_cb(lv_event_t *)
 {
     if (reload_block_until_ms && millis() < reload_block_until_ms) return;
@@ -104,6 +103,8 @@ static void reload_cb(lv_event_t *)
     if (reload_btn) lv_obj_add_state(reload_btn, LV_STATE_DISABLED);
 }
 
+// Antippen oeffnet die Filamentkonfiguration fuer genau diesen Slot. Welcher
+// gemeint ist, steckt in den Nutzdaten des Knopfes: AMS oben, Fach unten.
 static void slot_clicked_cb(lv_event_t *e)
 {
     const uint32_t packed = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
@@ -365,7 +366,7 @@ static void build_screen()
     lv_obj_set_size(reload_btn, 52, 30);
     lv_obj_align(reload_btn, LV_ALIGN_TOP_RIGHT, -PAD, 8);
     lv_obj_set_style_radius(reload_btn, 10, 0);
-    lv_obj_set_style_bg_color(reload_btn, lv_color_hex(0x546E7A), 0);
+    lv_obj_set_style_bg_color(reload_btn, lv_color_hex(COL_BUTTON), 0);
     lv_obj_add_event_cb(reload_btn, reload_cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *reload_lbl = lv_label_create(reload_btn);
