@@ -18,6 +18,7 @@
 #include "bambuddy_cover.h"
 #include "bambuddy_mqtt.h"
 #include "bambuddy_queue.h"
+#include "bambuddy_filament.h"
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "bambuddy_version.h"
@@ -121,6 +122,11 @@ static void add_ams_filter(JsonDocument &filter)
     tray_filter["id"] = true;
     tray_filter["tray_color"] = true;
     tray_filter["tray_type"] = true;
+    // Kurz-ID des Filaments: daraus wird im AMS-Screen der Klartextname.
+    // Fehlt sie im Filter, kommt sie gar nicht erst im Speicher an.
+    tray_filter["tray_info_idx"] = true;
+    tray_filter["nozzle_temp_min"] = true;
+    tray_filter["nozzle_temp_max"] = true;
     tray_filter["remain"] = true;
     tray_filter["exists"] = true;
 }
@@ -462,6 +468,7 @@ static void api_task(void *)
             bambuddy_queue_update();
             bambuddy_archive_update();
             bambuddy_smart_plugs_update();
+            bambuddy_filament_update();
 
             if (use_mqtt && ams_visible &&
                 (!last_ams_fetch_ms || millis() - last_ams_fetch_ms >= AMS_REFRESH_MS)) {
@@ -479,7 +486,9 @@ static void api_task(void *)
         // Bei offenem Kamera-Vollbild oefter aufwachen — sonst haenge der
         // 3-Sekunden-Takt am Leerlaufintervall von bis zu 30 Sekunden.
         if ((bambuddy_camera_active() || bambuddy_queue_visible() ||
-             bambuddy_archive_visible() || bambuddy_smart_plugs_visible()) && wait_ms > 500) {
+             bambuddy_archive_visible() || bambuddy_smart_plugs_visible() ||
+             bambuddy_filament_visible() || bambuddy_filament_pending_work()) &&
+            wait_ms > 500) {
             wait_ms = 500;
         }
 

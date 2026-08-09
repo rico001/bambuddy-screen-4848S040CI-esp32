@@ -5,6 +5,7 @@
 #include <WiFi.h>
 #include <string.h>
 
+#include "secrets.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -146,7 +147,18 @@ static void save_credentials(const char *ssid, const char *pw)
 
 static bool load_credentials(char *ssid, size_t ssid_len, char *pw, size_t pw_len)
 {
-    prefs.begin("wifi", true);
+    prefs.begin("wifi", false);
+
+    // Startwert aus secrets.h, aber nur solange ueberhaupt kein Eintrag
+    // existiert. Ein leerer, aber vorhandener Eintrag bleibt leer — sonst
+    // waere "Netzwerk vergessen" beim naechsten Start wieder rueckgaengig
+    // gemacht, und niemand kaeme von diesem Netz mehr los.
+    if (!prefs.isKey("ssid") && WIFI_DEFAULT_SSID[0] != '\0') {
+        prefs.putString("ssid", WIFI_DEFAULT_SSID);
+        prefs.putString("pw", WIFI_DEFAULT_PASS);
+        Serial.println("[WLAN] Zugangsdaten aus secrets.h uebernommen");
+    }
+
     String s = prefs.getString("ssid", "");
     String p = prefs.getString("pw", "");
     prefs.end();
@@ -164,6 +176,11 @@ static void clear_credentials()
 {
     prefs.begin("wifi", false);
     prefs.clear();
+    // Leeren Eintrag stehen lassen: Er ist die Spur, dass hier bewusst
+    // geloescht wurde. Ohne ihn wuerde load_credentials() den Startwert aus
+    // secrets.h fuer einen unbeschriebenen Speicher halten und ihn erneut
+    // eintragen.
+    prefs.putString("ssid", "");
     prefs.end();
 }
 
