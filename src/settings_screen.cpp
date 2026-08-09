@@ -759,7 +759,8 @@ void settings_screen_create(lv_obj_t *parent)
     settings_add_section("BAMBUDDY");
 
     settings_add_text_row(LV_SYMBOL_HOME, "Server-URL",
-                          bambuddy_base_url, bambuddy_set_base_url, false, false);
+                          bambuddy_configured_base_url, bambuddy_set_base_url, false,
+                          false);
 
     settings_add_text_row(LV_SYMBOL_EYE_CLOSE, "API-Key",
                           bambuddy_api_key, bambuddy_set_api_key, true, false);
