@@ -120,7 +120,11 @@ static inline void bambuddy_status_from_json(JsonDocument &doc, bambuddy_status_
             tray.exists = tray_json["exists"].isNull()
                               ? tray.type[0] != '\0'
                               : tray_json["exists"].as<bool>();
+            bambuddy_copy_field(tray.info_idx, sizeof(tray.info_idx),
+                                tray_json["tray_info_idx"] | "");
             tray.color = bambuddy_parse_color(tray_json["tray_color"] | "");
+            tray.temp_min = tray_json["nozzle_temp_min"] | 0;
+            tray.temp_max = tray_json["nozzle_temp_max"] | 0;
             tray.remain = tray_json["remain"] | 0;
             if (tray.remain < 0) tray.remain = 0;
             if (tray.remain > 100) tray.remain = 100;

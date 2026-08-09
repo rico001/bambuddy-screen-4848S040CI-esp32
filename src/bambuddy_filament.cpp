@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "bambuddy_api.h"
 #include "bambuddy_config.h"
 #include "bambuddy_http.h"
 #include "bambuddy_status_parse.h"
@@ -199,9 +200,25 @@ static int slot_preset_count = 0;
 
 static SemaphoreHandle_t list_mutex = nullptr;
 static volatile bool visible = false;
+static volatile bool preload_requested = false;
 static volatile bool loaded = false;
 static volatile bool list_fresh = false;
 static volatile bool busy = false;
+static volatile bool last_write_ok = false;
+
+// Nachfassen nach dem Konfigurieren.
+//
+// Der Drucker meldet die neue Belegung nicht sofort zurueck — bis es soweit
+// ist, zeigt der AMS-Screen den alten Stand. Ein einzelner Abruf direkt nach
+// dem Absenden kaeme dafuer zu frueh, deshalb drei im Abstand von fuenf
+// Sekunden. Nach dem Leeren eines Slots entfaellt das: Dort ist sofort
+// nichts mehr da, und der naechste regulaere Abruf genuegt.
+static constexpr int REFRESH_BURST = 3;
+static constexpr uint32_t REFRESH_SPACING_MS = 5000;
+static int pending_refreshes = 0;
+static uint32_t next_refresh_ms = 0;
+static int32_t refresh_ams_id = -1;
+static int32_t refresh_tray_id = -1;
 static volatile bool read_request_active = false;
 static uint32_t last_error_ms = 0;
 
@@ -240,24 +257,50 @@ static void read_error_detail(HTTPClient &http, char *out, size_t out_len)
 // Abrufe
 // ============================================================
 
-static bool begin_get(BambuddyHttp &session, const char *url)
+// Ein Versuch reicht hier nicht.
+//
+// Alle Abrufe teilen sich eine dauerhaft offene Verbindung — anders waere
+// der Vorrat an TCP-Plaetzen schnell erschoepft. Zwischen dem Laden der
+// Profile und dem Absenden vergehen aber Sekunden, in denen der Benutzer
+// auswaehlt, und der Server schliesst eine untaetige Verbindung von sich
+// aus. Das Geraet erfaehrt davon erst beim naechsten Schreibversuch, der
+// dann mit "connection lost" (-5) scheitert.
+//
+// Deshalb bei jedem Verbindungsfehler einmal vollstaendig schliessen und neu
+// aufbauen. Nur bei negativen Rueckgabewerten: Ein HTTP-Fehler wie 403 ist
+// eine Antwort und wird nicht besser, wenn man sie noch einmal holt.
+static int request_once(BambuddyHttp &session, const char *method, const char *url,
+                        uint32_t timeout_ms)
 {
-    if (!session.begin(url, true)) return false;
+    if (!session.begin(url, true)) return -1;
+
     HTTPClient &http = session.http();
-    http.setTimeout(4000);
-    http.setConnectTimeout(4000);
-    return true;
+    http.setTimeout(timeout_ms);
+    http.setConnectTimeout(6000);
+
+    if (strcmp(method, "GET") == 0) return http.GET();
+    return http.sendRequest(method, (uint8_t *)nullptr, 0);
+}
+
+static int request_with_retry(BambuddyHttp &session, const char *method,
+                              const char *url, uint32_t timeout_ms)
+{
+    const int code = request_once(session, method, url, timeout_ms);
+    if (code >= 0) return code;
+
+    session.end(true);
+    delay(200);
+    return request_once(session, method, url, timeout_ms);
 }
 
 static bool fetch_builtin(int &count)
 {
     BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/cloud/builtin-filaments");
-    if (!begin_get(session, url)) return false;
 
-    HTTPClient &http = session.http();
     read_request_active = true;
-    const int code = http.GET();
+    const int code = request_with_retry(session, "GET", url, 6000);
+    HTTPClient &http = session.http();
     if (code != 200) {
         char detail[80];
         read_error_detail(http, detail, sizeof(detail));
@@ -307,11 +350,10 @@ static bool fetch_local(int &count)
 {
     BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/local-presets/");
-    if (!begin_get(session, url)) return false;
 
-    HTTPClient &http = session.http();
     read_request_active = true;
-    const int code = http.GET();
+    const int code = request_with_retry(session, "GET", url, 6000);
+    HTTPClient &http = session.http();
     if (code != 200) {
         session.end(false);
         read_request_active = false;
@@ -368,11 +410,10 @@ static void fetch_slot_presets()
 {
     BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/printers/%d/slot-presets", bambuddy_printer_id());
-    if (!begin_get(session, url)) return;
 
-    HTTPClient &http = session.http();
     read_request_active = true;
-    const int code = http.GET();
+    const int code = request_with_retry(session, "GET", url, 6000);
+    HTTPClient &http = session.http();
     if (code != 200) {
         session.end(false);
         read_request_active = false;
@@ -468,19 +509,18 @@ static void url_encode(const char *src, char *out, size_t out_len)
     out[o < out_len ? o : out_len - 1] = '\0';
 }
 
+// Grosszuegiger als bei den Abrufen: configure schickt zwei Befehle an den
+// Drucker und wartet auf dessen Bestaetigung, das dauert laenger als eine
+// Datenbankabfrage.
+static constexpr uint32_t WRITE_TIMEOUT_MS = 15000;
+
 static int send_post(const char *url, char *detail, size_t detail_len)
 {
     if (detail_len) detail[0] = '\0';
 
     BambuddyHttp &session = bambuddy_http_shared();
-    if (!session.begin(url, true)) return -1;
-
-    HTTPClient &http = session.http();
-    http.setTimeout(6000);
-    http.setConnectTimeout(6000);
-
-    const int code = http.POST((uint8_t *)nullptr, 0);
-    if (code < 200 || code >= 300) read_error_detail(http, detail, detail_len);
+    const int code = request_with_retry(session, "POST", url, WRITE_TIMEOUT_MS);
+    if (code < 200 || code >= 300) read_error_detail(session.http(), detail, detail_len);
     session.end(false);
     return code;
 }
@@ -488,13 +528,7 @@ static int send_post(const char *url, char *detail, size_t detail_len)
 static int send_put(const char *url)
 {
     BambuddyHttp &session = bambuddy_http_shared();
-    if (!session.begin(url, true)) return -1;
-
-    HTTPClient &http = session.http();
-    http.setTimeout(6000);
-    http.setConnectTimeout(6000);
-
-    const int code = http.sendRequest("PUT", (uint8_t *)nullptr, 0);
+    const int code = request_with_retry(session, "PUT", url, WRITE_TIMEOUT_MS);
     session.end(false);
     return code;
 }
@@ -521,12 +555,12 @@ static void save_slot_preset(const bambuddy_filament_preset_t &p, int32_t ams_id
     }
 }
 
-static void configure_slot(const configure_request_t &req)
+static bool configure_slot(const configure_request_t &req)
 {
     bambuddy_filament_preset_t p;
     if (!bambuddy_filament_get(req.preset_index, &p)) {
         set_message("Profil nicht gefunden");
-        return;
+        return false;
     }
 
     // Integriert: die eigene Kurz-ID. Lokal: die generische des Materials —
@@ -539,7 +573,7 @@ static void configure_slot(const configure_request_t &req)
     }
     if (!tray_idx[0]) {
         set_message("Material dem Drucker unbekannt");
-        return;
+        return false;
     }
 
     int16_t lo = 0;
@@ -565,6 +599,14 @@ static void configure_slot(const configure_request_t &req)
              (int)req.tray_id, tray_idx, type_enc, brand_enc,
              (unsigned)(req.color_rgb & 0xFFFFFF), (int)lo, (int)hi);
 
+    // Vollstaendig protokollieren, was rausgeht. Wenn auf dem Display
+    // spaeter eine andere Farbe steht, laesst sich damit trennen, ob das
+    // Geraet etwas Falsches geschickt oder der Drucker es ueberschrieben hat
+    // — Bambu-Spulen mit RFID melden ihre eigene Farbe zurueck.
+    Serial.printf("[Filament] AMS %d Fach %d <- %s | %s | %s | %06X | %d-%d C\n",
+                  (int)req.ams_id, (int)req.tray_id + 1, p.name, p.material, tray_idx,
+                  (unsigned)(req.color_rgb & 0xFFFFFF), (int)lo, (int)hi);
+
     char detail[80];
     const int code = send_post(url, detail, sizeof(detail));
     if (code >= 200 && code < 300) {
@@ -572,7 +614,7 @@ static void configure_slot(const configure_request_t &req)
         char text[80];
         snprintf(text, sizeof(text), "%s gesetzt", p.name);
         set_message(text);
-        return;
+        return true;
     }
 
     Serial.printf("[Filament] configure -> HTTP %d%s%s\n", code, detail[0] ? " | " : "",
@@ -584,9 +626,10 @@ static void configure_slot(const configure_request_t &req)
         snprintf(text, sizeof(text), "Fehlgeschlagen (HTTP %d)", code);
         set_message(text);
     }
+    return false;
 }
 
-static void reset_slot(const configure_request_t &req)
+static bool reset_slot(const configure_request_t &req)
 {
     char url[240];
     snprintf(url, sizeof(url), "%s/api/v1/printers/%d/ams/%d/tray/%d/reset",
@@ -597,7 +640,7 @@ static void reset_slot(const configure_request_t &req)
     const int code = send_post(url, detail, sizeof(detail));
     if (code >= 200 && code < 300) {
         set_message("Slot zurueckgesetzt");
-        return;
+        return true;
     }
 
     Serial.printf("[Filament] reset -> HTTP %d%s%s\n", code, detail[0] ? " | " : "",
@@ -609,6 +652,7 @@ static void reset_slot(const configure_request_t &req)
         snprintf(text, sizeof(text), "Fehlgeschlagen (HTTP %d)", code);
         set_message(text);
     }
+    return false;
 }
 
 // ============================================================
@@ -634,6 +678,24 @@ bool bambuddy_filament_visible()
     return visible;
 }
 
+void bambuddy_filament_preload()
+{
+    if (!loaded) preload_requested = true;
+}
+
+const char *bambuddy_filament_name_for_idx(const char *info_idx)
+{
+    if (!loaded || !presets || !info_idx || !info_idx[0]) return "";
+
+    char wanted[24];
+    snprintf(wanted, sizeof(wanted), "builtin_%s", info_idx);
+
+    for (int i = 0; i < preset_count; i++) {
+        if (strcmp(presets[i].id, wanted) == 0) return presets[i].name;
+    }
+    return "";
+}
+
 void bambuddy_filament_update()
 {
     if (WiFi.status() != WL_CONNECTED || !bambuddy_config_complete()) return;
@@ -643,10 +705,14 @@ void bambuddy_filament_update()
         configure_request_t req = request;
         request.pending = false;
 
-        if (req.preset_index < 0) {
-            reset_slot(req);
-        } else {
-            configure_slot(req);
+        const bool is_reset = req.preset_index < 0;
+        last_write_ok = is_reset ? reset_slot(req) : configure_slot(req);
+
+        if (last_write_ok && !is_reset) {
+            pending_refreshes = REFRESH_BURST;
+            next_refresh_ms = millis() + REFRESH_SPACING_MS;
+            refresh_ams_id = req.ams_id;
+            refresh_tray_id = req.tray_id;
         }
 
         // Die Zuordnungen haben sich geaendert — beim naechsten Oeffnen soll
@@ -657,7 +723,18 @@ void bambuddy_filament_update()
         return;
     }
 
-    if (!visible || loaded) return;
+    if (pending_refreshes > 0 && millis() >= next_refresh_ms) {
+        pending_refreshes--;
+        next_refresh_ms = millis() + REFRESH_SPACING_MS;
+        bambuddy_api_send_command(BB_CMD_REFRESH_AMS);
+
+        if (pending_refreshes == 0) {
+            refresh_ams_id = -1;
+            refresh_tray_id = -1;
+        }
+    }
+
+    if ((!visible && !preload_requested) || loaded) return;
     if (last_error_ms && (millis() - last_error_ms) < RETRY_AFTER_ERROR_MS) return;
 
     load_presets();
@@ -723,16 +800,6 @@ void bambuddy_filament_effective_temps(const bambuddy_filament_preset_t &preset,
     material_temps(preset.material, lo, hi);
 }
 
-const char *bambuddy_filament_slot_preset_name(int32_t ams_id, int32_t tray_id)
-{
-    for (int i = 0; i < slot_preset_count; i++) {
-        if (slot_presets[i].ams_id == ams_id && slot_presets[i].tray_id == tray_id) {
-            return slot_presets[i].preset_name;
-        }
-    }
-    return "";
-}
-
 void bambuddy_filament_request_configure(int32_t ams_id, int32_t tray_id,
                                          int preset_index, uint32_t color_rgb)
 {
@@ -757,6 +824,67 @@ void bambuddy_filament_request_reset(int32_t ams_id, int32_t tray_id)
 bool bambuddy_filament_busy()
 {
     return busy || request.pending;
+}
+
+bool bambuddy_filament_last_write_ok()
+{
+    return last_write_ok;
+}
+
+const char *bambuddy_filament_tray_name(int32_t ams_id, int32_t tray_id,
+                                        const char *info_idx)
+{
+    const slot_preset_t *stored = nullptr;
+    for (int i = 0; i < slot_preset_count; i++) {
+        if (slot_presets[i].ams_id == ams_id && slot_presets[i].tray_id == tray_id) {
+            stored = &slot_presets[i];
+            break;
+        }
+    }
+
+    if (stored && stored->preset_name[0] && info_idx && info_idx[0]) {
+        // Integriertes Profil: Die Notiz traegt die Kurz-ID direkt im
+        // Schluessel. Stimmt sie mit der gemeldeten ueberein, meinen beide
+        // dasselbe.
+        if (strncmp(stored->preset_id, "builtin_", 8) == 0 &&
+            strcmp(stored->preset_id + 8, info_idx) == 0) {
+            return stored->preset_name;
+        }
+
+        // Eigenes Preset: Der Drucker kennt nur die generische ID seines
+        // Materials. Passt die, gehoert die Notiz zu diesem Fach.
+        if (strncmp(stored->preset_id, "local_", 6) == 0 && loaded && presets) {
+            for (int i = 0; i < preset_count; i++) {
+                if (strcmp(presets[i].id, stored->preset_id) != 0) continue;
+                if (strcmp(generic_tray_idx(presets[i].material), info_idx) == 0) {
+                    return stored->preset_name;
+                }
+                break;
+            }
+        }
+    }
+
+    return bambuddy_filament_name_for_idx(info_idx);
+}
+
+bool bambuddy_filament_slot_pending(int32_t ams_id, int32_t tray_id)
+{
+    return pending_refreshes > 0 && refresh_ams_id == ams_id &&
+           refresh_tray_id == tray_id;
+}
+
+uint32_t bambuddy_filament_pending_token()
+{
+    if (pending_refreshes <= 0 || refresh_ams_id < 0) return 0;
+
+    // Plus eins, damit AMS 0 / Fach 0 nicht dieselbe Kennung wie "keines"
+    // bekommt.
+    return (((uint32_t)refresh_ams_id << 16) | ((uint32_t)refresh_tray_id & 0xFFFF)) + 1;
+}
+
+bool bambuddy_filament_pending_work()
+{
+    return request.pending || busy || pending_refreshes > 0;
 }
 
 const char *bambuddy_filament_message()

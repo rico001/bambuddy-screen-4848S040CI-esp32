@@ -24,8 +24,17 @@ struct bambuddy_ams_tray_t {
     int32_t id;
     bool exists;
     char type[16];
+    // Kurz-ID des Filaments, wie sie der Drucker meldet ("GFL99"). Daraus
+    // ergibt sich der Klartextname. Bewusst knapp gehalten: Der Status wird
+    // haeufig kopiert, und 16 Faecher summieren sich.
+    char info_idx[8];
     uint32_t color;
     int32_t remain;
+    // Duesentemperaturen, die derzeit fuer dieses Fach gelten. Der Drucker
+    // meldet sie mit; damit laesst sich vor dem Konfigurieren zeigen, was
+    // sich aendern wuerde.
+    int16_t temp_min;
+    int16_t temp_max;
 };
 
 struct bambuddy_ams_unit_t {

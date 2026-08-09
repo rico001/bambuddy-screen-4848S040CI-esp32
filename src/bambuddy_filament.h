@@ -24,6 +24,26 @@ struct bambuddy_filament_preset_t {
 };
 
 void bambuddy_filament_set_visible(bool visible);
+
+// Profilliste im Hintergrund holen, ohne dass die Konfiguration offen ist.
+// Der AMS-Screen braucht sie, um Kurz-IDs in Namen zu uebersetzen.
+void bambuddy_filament_preload();
+
+// Klartextname zu einer Filament-Kurz-ID ("GFL99" -> "Generic PLA").
+// Leerer String, solange die Liste nicht geladen oder die ID unbekannt ist.
+const char *bambuddy_filament_name_for_idx(const char *info_idx);
+
+// Was steckt laut Drucker in diesem Fach? info_idx ist die Kurz-ID aus dem
+// Status.
+//
+// Massgeblich ist immer der Drucker. Die in Bambuddy hinterlegte Zuordnung
+// ist nur eine Notiz und kann veraltet sein — sie wird deshalb bloss dann
+// bevorzugt, wenn sie zur gemeldeten Kurz-ID passt. Dann traegt sie mehr:
+// Ein eigenes Preset schickt die generische ID seines Materials an den
+// Drucker, "Generic PLA - 1" waere sonst nicht von "Generic PLA" zu
+// unterscheiden.
+const char *bambuddy_filament_tray_name(int32_t ams_id, int32_t tray_id,
+                                        const char *info_idx);
 bool bambuddy_filament_visible();
 void bambuddy_filament_update();
 
@@ -35,11 +55,6 @@ bool bambuddy_filament_take_fresh();
 // Welches Profil ist fuer diesen Slot hinterlegt? Index in die Liste,
 // sonst -1. Speist die Vorauswahl beim Oeffnen.
 int bambuddy_filament_slot_preset_index(int32_t ams_id, int32_t tray_id);
-
-// Klartextname des hinterlegten Profils, sonst "". Steht auch dann zur
-// Verfuegung, wenn die Profilliste den Eintrag nicht kennt — etwa nach dem
-// Loeschen eines lokalen Presets in Bambuddy.
-const char *bambuddy_filament_slot_preset_name(int32_t ams_id, int32_t tray_id);
 
 // Welche Duesentemperaturen gingen fuer dieses Profil an den Drucker?
 // Eigene Werte des lokalen Presets, sonst die Materialtabelle. Die
@@ -57,6 +72,26 @@ void bambuddy_filament_request_reset(int32_t ams_id, int32_t tray_id);
 
 // Laeuft gerade ein Schreibvorgang? Solange bleiben die Knoepfe gesperrt.
 bool bambuddy_filament_busy();
+
+// Hat der letzte Schreibvorgang geklappt? Die Ansicht schliesst sich nur
+// dann von selbst — bei einem Fehler bleibt sie offen und zeigt ihn an.
+bool bambuddy_filament_last_write_ok();
+
+// Steht noch Arbeit an — ein Schreibvorgang oder die Nachfass-Abrufe danach?
+// Der Netzwerk-Task darf solange nicht in sein langes Leerlaufintervall
+// fallen, sonst kaeme die Auffrischung erst eine halbe Minute spaeter.
+bool bambuddy_filament_pending_work();
+
+// Wartet dieses Fach noch auf frische Daten vom Drucker? Zwischen dem
+// Konfigurieren und dem letzten Nachfass-Abruf zeigt der AMS-Screen dort
+// einen Ladekreis — sonst sieht man sekundenlang den alten Stand und haelt
+// ihn fuer das Ergebnis.
+bool bambuddy_filament_slot_pending(int32_t ams_id, int32_t tray_id);
+
+// Kennung des wartenden Fachs, 0 wenn keines wartet. Aendert sie sich, muss
+// der AMS-Screen neu zeichnen — an den Druckerdaten allein waere das nicht
+// zu erkennen.
+uint32_t bambuddy_filament_pending_token();
 
 const char *bambuddy_filament_message();
 uint32_t bambuddy_filament_message_age();
