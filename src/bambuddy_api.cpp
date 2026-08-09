@@ -122,6 +122,11 @@ static void add_ams_filter(JsonDocument &filter)
     tray_filter["id"] = true;
     tray_filter["tray_color"] = true;
     tray_filter["tray_type"] = true;
+    // Kurz-ID des Filaments: daraus wird im AMS-Screen der Klartextname.
+    // Fehlt sie im Filter, kommt sie gar nicht erst im Speicher an.
+    tray_filter["tray_info_idx"] = true;
+    tray_filter["nozzle_temp_min"] = true;
+    tray_filter["nozzle_temp_max"] = true;
     tray_filter["remain"] = true;
     tray_filter["exists"] = true;
 }
@@ -482,7 +487,8 @@ static void api_task(void *)
         // 3-Sekunden-Takt am Leerlaufintervall von bis zu 30 Sekunden.
         if ((bambuddy_camera_active() || bambuddy_queue_visible() ||
              bambuddy_archive_visible() || bambuddy_smart_plugs_visible() ||
-             bambuddy_filament_visible()) && wait_ms > 500) {
+             bambuddy_filament_visible() || bambuddy_filament_pending_work()) &&
+            wait_ms > 500) {
             wait_ms = 500;
         }
 
