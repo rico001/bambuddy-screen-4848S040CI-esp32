@@ -70,6 +70,16 @@ static String load_or_seed(const char *key, const char *fallback)
     return prefs.getString(key, fallback);
 }
 
+static bool load_or_seed_bool(const char *key, bool fallback)
+{
+    if (!prefs.isKey(key)) {
+        prefs.putBool(key, fallback);
+        Serial.printf("[Bambuddy] '%s' mit Startwert belegt\n", key);
+        return fallback;
+    }
+    return prefs.getBool(key, fallback);
+}
+
 static int load_or_seed_int(const char *key, int fallback)
 {
     if (!prefs.isKey(key)) {
@@ -93,7 +103,8 @@ void bambuddy_config_load()
     String mtopic = load_or_seed(K_MTOPIC, BAMBUDDY_DEFAULT_MQTT_TOPIC);
     cfg_printer_id = load_or_seed_int(K_PID, BAMBUDDY_DEFAULT_PRINTER_ID);
     cfg_mqtt_port = load_or_seed_int(K_MPORT, BAMBUDDY_DEFAULT_MQTT_PORT);
-    cfg_source_mqtt = prefs.getBool(K_SRC, false);
+    cfg_source_mqtt = load_or_seed_bool(K_SRC, BAMBUDDY_DEFAULT_SOURCE_MQTT);
+
     prefs.end();
 
     copy_trimmed_url(cfg_url, sizeof(cfg_url), url.c_str());
