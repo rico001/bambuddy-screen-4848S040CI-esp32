@@ -158,6 +158,14 @@ hier nachsehen:
   Suche nach `configureAmsSlot`. Bei Zweifeln über das Verhalten der
   Oberfläche ist das die verlässlichste Quelle — verlässlicher als die
   API-Beschreibung, die bei `tray_info_idx` in die Irre führt.
+- **Manche Endpunkte sind für API-Schlüssel gesperrt**, unabhängig von
+  deren Rechten. `PUT /printers/{id}/slot-presets/{ams}/{tray}` antwortet
+  mit `403 {"detail":"API keys cannot be used for administrative
+  operations"}` — lesen geht, schreiben nie. Das Display verzichtet deshalb
+  darauf, die Zuordnung Slot → Profil zu vermerken. Bei einem 403 also
+  zuerst den Klartext lesen: „ohne Cloud-Zugriff" ist eine Einstellung am
+  Schlüssel, „administrative operations" dagegen eine Regel des Servers, an
+  der sich nichts drehen lässt.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
@@ -177,7 +185,7 @@ hier nachsehen:
 | `GET /archives/` · `DELETE /archives/{id}` · `GET /archives/{id}/thumbnail` | `bambuddy_archive.cpp`, `bambuddy_cover.cpp` |
 | `GET /smart-plugs/` · `/{id}/status` · `POST /{id}/control` | `bambuddy_smart_plugs.cpp` |
 | `GET /cloud/builtin-filaments` · `GET /local-presets/` | `bambuddy_filament.cpp` |
-| `GET /printers/{id}/slot-presets` · `PUT /printers/{id}/slot-presets/{ams}/{tray}` | `bambuddy_filament.cpp` |
+| `GET /printers/{id}/slot-presets` | `bambuddy_filament.cpp` |
 | `POST /printers/{id}/slots/{ams}/{tray}/configure` · `POST /printers/{id}/ams/{ams}/tray/{tray}/reset` | `bambuddy_filament.cpp` |
 | `GET /updates/check` (Ersatz: `GET /updates/version`) | `bambuddy_version.cpp` |
 

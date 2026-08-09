@@ -7,7 +7,16 @@
 // Frueh in setup() aufrufen, vor dem Bau der Screens.
 void bambuddy_config_load();
 
-const char *bambuddy_base_url();   // ohne abschliessenden Slash, z.B. "https://host"
+// Basis-URL, wie sie fuer Verbindungen benutzt wird: ohne abschliessenden
+// Slash, bei http mit aufgeloester IP-Adresse statt des Namens.
+const char *bambuddy_base_url();
+
+// Die eingetragene Fassung mit Namen — fuer die Anzeige im Einstellungs-Screen.
+const char *bambuddy_configured_base_url();
+
+// Gemerkte Adresse verwerfen. Nach einem Verbindungsfehler aufrufen, damit
+// ein umgezogener Server wiedergefunden wird.
+void bambuddy_config_forget_host();
 const char *bambuddy_api_key();
 const char *bambuddy_cam_token();
 int bambuddy_printer_id();

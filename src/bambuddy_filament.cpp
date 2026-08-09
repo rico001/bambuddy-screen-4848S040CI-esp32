@@ -257,18 +257,24 @@ static void read_error_detail(HTTPClient &http, char *out, size_t out_len)
 // Abrufe
 // ============================================================
 
-// Ein Versuch reicht hier nicht.
+// Abrufe teilen sich eine dauerhaft offene Verbindung — anders waere der
+// Vorrat an TCP-Plaetzen schnell erschoepft.
 //
-// Alle Abrufe teilen sich eine dauerhaft offene Verbindung — anders waere
-// der Vorrat an TCP-Plaetzen schnell erschoepft. Zwischen dem Laden der
-// Profile und dem Absenden vergehen aber Sekunden, in denen der Benutzer
-// auswaehlt, und der Server schliesst eine untaetige Verbindung von sich
-// aus. Das Geraet erfaehrt davon erst beim naechsten Schreibversuch, der
-// dann mit "connection lost" (-5) scheitert.
+// Fuer Schreibvorgaenge taugt sie nicht. Zwischen dem Laden der Profile und
+// dem Antippen von "Konfigurieren" vergehen Sekunden, in denen der Benutzer
+// auswaehlt; der Server (uvicorn) schliesst untaetige Verbindungen aber nach
+// rund fuenf. Das Geraet schreibt dann in einen Socket, den die Gegenseite
+// laengst zugemacht hat: Das Schreiben gelingt lokal, die Antwort bleibt
+// aus, und erst das Zeitlimit beendet das Warten. Im Log steht dann "-11
+// read Timeout" oder "-5 connection lost" — und es ging genau dann gut,
+// wenn man schnell genug getippt hat.
 //
-// Deshalb bei jedem Verbindungsfehler einmal vollstaendig schliessen und neu
-// aufbauen. Nur bei negativen Rueckgabewerten: Ein HTTP-Fehler wie 403 ist
-// eine Antwort und wird nicht besser, wenn man sie noch einmal holt.
+// Schreibvorgaenge bauen deshalb immer neu auf. Der Handshake kostet
+// wenige Millisekunden und faellt nur bei einer Benutzeraktion an.
+//
+// Bleibt die Wiederholung bei Verbindungsfehlern, fuer alles Uebrige. Nur
+// bei negativen Rueckgabewerten: Ein HTTP-Fehler wie 403 ist eine Antwort
+// und wird nicht besser, wenn man sie noch einmal holt.
 static int request_once(BambuddyHttp &session, const char *method, const char *url,
                         uint32_t timeout_ms)
 {
@@ -285,10 +291,21 @@ static int request_once(BambuddyHttp &session, const char *method, const char *u
 static int request_with_retry(BambuddyHttp &session, const char *method,
                               const char *url, uint32_t timeout_ms)
 {
+    // Kein GET heisst: Schreibvorgang. Erst die womoeglich abgestandene
+    // Verbindung wegwerfen, dann senden.
+    if (strcmp(method, "GET") != 0) session.end(true);
+
     const int code = request_once(session, method, url, timeout_ms);
     if (code >= 0) return code;
 
     session.end(true);
+
+    // Die gemerkte Adresse nur verwerfen, wenn der Verbindungsaufbau selbst
+    // scheiterte (-1). Bei "-11 read Timeout" oder "-5 connection lost" stand
+    // die Verbindung ja — dort ist die Adresse richtig, und eine neue
+    // Namensaufloesung koennte den Task erneut zehn Sekunden blockieren.
+    if (code == -1) bambuddy_config_forget_host();
+
     delay(200);
     return request_once(session, method, url, timeout_ms);
 }
@@ -509,10 +526,11 @@ static void url_encode(const char *src, char *out, size_t out_len)
     out[o < out_len ? o : out_len - 1] = '\0';
 }
 
-// Grosszuegiger als bei den Abrufen: configure schickt zwei Befehle an den
-// Drucker und wartet auf dessen Bestaetigung, das dauert laenger als eine
-// Datenbankabfrage.
-static constexpr uint32_t WRITE_TIMEOUT_MS = 15000;
+// Reichlich bemessen, aber nicht mehr grosszuegig: Gemessen antwortet der
+// Endpunkt in gut zwanzig Millisekunden. Die frueheren 15 Sekunden waren
+// der Versuch, ein Verbindungsproblem mit Geduld zu loesen — sie haben nur
+// den Stillstand verlaengert.
+static constexpr uint32_t WRITE_TIMEOUT_MS = 8000;
 
 static int send_post(const char *url, char *detail, size_t detail_len)
 {
@@ -525,38 +543,24 @@ static int send_post(const char *url, char *detail, size_t detail_len)
     return code;
 }
 
-static int send_put(const char *url)
-{
-    BambuddyHttp &session = bambuddy_http_shared();
-    const int code = request_with_retry(session, "PUT", url, WRITE_TIMEOUT_MS);
-    session.end(false);
-    return code;
-}
+// Hier stand einmal ein zweiter Aufruf, der die Zuordnung Slot -> Profil in
+// Bambuddy vermerkte (PUT /printers/{id}/slot-presets/{ams}/{tray}), so wie
+// es dessen Oberflaeche nach jedem Konfigurieren tut.
+//
+// Der Server lehnt ihn fuer Schluessel-Anmeldungen kategorisch ab:
+//   403 {"detail":"API keys cannot be used for administrative operations"}
+// Das ist keine Einstellung am Schluessel, sondern eine Regel des Servers —
+// der Aufruf konnte also nur scheitern und kostete im schlechtesten Fall
+// zweimal 15 Sekunden Zeitlimit bei jedem Konfigurieren.
+//
+// Folgen, falls das jemand vermisst: Bambuddys eigene Notiz bleibt auf dem
+// Stand der letzten Aenderung im Browser. Die Anzeige stoert das nicht —
+// bambuddy_filament_tray_name() nimmt ohnehin den Drucker als Massgabe und
+// ignoriert die Notiz, sobald beide sich widersprechen. Nur bei eigenen
+// Presets geht Feinheit verloren: Ohne Notiz laesst sich "Generic PLA - 1"
+// nicht mehr von "Generic PLA" unterscheiden, weil der Drucker beide unter
+// derselben generischen Kurz-ID fuehrt.
 
-// Zuordnung Slot -> Profil merken. Der Drucker kennt nur die Kurz-ID; welches
-// Profil dahinter stand, weiss allein Bambuddy. Ohne diesen zweiten Aufruf
-// steht beim naechsten Oeffnen nichts vorausgewaehlt — auch nicht im Browser.
-static void save_slot_preset(const bambuddy_filament_preset_t &p, int32_t ams_id,
-                             int32_t tray_id)
-{
-    char name_enc[144];
-    url_encode(p.name, name_enc, sizeof(name_enc));
-
-    char url[512];
-    snprintf(url, sizeof(url),
-             "%s/api/v1/printers/%d/slot-presets/%d/%d"
-             "?preset_id=%s&preset_name=%s&preset_source=%s",
-             bambuddy_base_url(), bambuddy_printer_id(), (int)ams_id, (int)tray_id,
-             p.id, name_enc, p.local ? "local" : "builtin");
-
-    const int code = send_put(url);
-    if (code < 200 || code >= 300) {
-        Serial.printf("[Filament] Zuordnung nicht gespeichert (HTTP %d)\n", code);
-    }
-}
-
-// Ausgang beider Schreibvorgaenge. Vorher stand dieser Block zweimal fast
-// wortgleich da — einmal in configure_slot, einmal in reset_slot.
 static bool report_write(const char *what, int code, const char *detail)
 {
     if (code >= 200 && code < 300) return true;
@@ -631,8 +635,6 @@ static bool configure_slot(const configure_request_t &req)
     char detail[80];
     const int code = send_post(url, detail, sizeof(detail));
     if (!report_write("configure", code, detail)) return false;
-
-    save_slot_preset(p, req.ams_id, req.tray_id);
 
     char text[80];
     snprintf(text, sizeof(text), "%s gesetzt", p.name);

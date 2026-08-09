@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <WiFi.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -34,6 +35,56 @@ static int cfg_mqtt_port = 1883;
 static bool cfg_source_mqtt = false;
 
 static char url_buf[256];
+
+static constexpr uint32_t HOST_CACHE_MS = 600000; // 10 Minuten
+
+static char cfg_url_resolved[129];
+static uint32_t resolved_at_ms = 0;
+
+static bool looks_like_ip(const char *host)
+{
+    for (const char *p = host; *p; p++) {
+        if (*p != '.' && (*p < '0' || *p > '9')) return false;
+    }
+    return host[0] != '\0';
+}
+
+void bambuddy_config_forget_host()
+{
+    cfg_url_resolved[0] = '\0';
+    resolved_at_ms = 0;
+}
+
+static const char *effective_base_url()
+{
+    if (strncmp(cfg_url, "http://", 7) != 0) return cfg_url; // https: Name behalten
+
+    if (cfg_url_resolved[0] && (millis() - resolved_at_ms) < HOST_CACHE_MS) {
+        return cfg_url_resolved;
+    }
+
+    const char *host_start = cfg_url + 7;
+    const char *host_end = host_start;
+    while (*host_end && *host_end != ':' && *host_end != '/') host_end++;
+
+    char host[80];
+    const size_t host_len = (size_t)(host_end - host_start);
+    if (host_len == 0 || host_len >= sizeof(host)) return cfg_url;
+    memcpy(host, host_start, host_len);
+    host[host_len] = '\0';
+
+    if (looks_like_ip(host)) return cfg_url;
+    if (WiFi.status() != WL_CONNECTED) return cfg_url;
+
+    IPAddress ip;
+    if (!WiFi.hostByName(host, ip)) return cfg_url; // beim naechsten Mal wieder
+
+    snprintf(cfg_url_resolved, sizeof(cfg_url_resolved), "http://%s%s",
+             ip.toString().c_str(), host_end);
+    resolved_at_ms = millis();
+    Serial.printf("[Bambuddy] %s aufgeloest zu %s\n", host, cfg_url_resolved);
+    return cfg_url_resolved;
+}
 
 static Preferences prefs;
 
@@ -123,7 +174,8 @@ void bambuddy_config_load()
                   cfg_mqtt_pass[0] ? "gesetzt" : "FEHLT", cfg_mqtt_topic);
 }
 
-const char *bambuddy_base_url() { return cfg_url; }
+const char *bambuddy_base_url() { return effective_base_url(); }
+const char *bambuddy_configured_base_url() { return cfg_url; }
 const char *bambuddy_api_key() { return cfg_key; }
 const char *bambuddy_cam_token() { return cfg_cam; }
 int bambuddy_printer_id() { return cfg_printer_id; }
@@ -131,6 +183,7 @@ int bambuddy_printer_id() { return cfg_printer_id; }
 void bambuddy_set_base_url(const char *value)
 {
     copy_trimmed_url(cfg_url, sizeof(cfg_url), value ? value : "");
+    bambuddy_config_forget_host();
     prefs.begin(NS, false);
     prefs.putString(K_URL, cfg_url);
     prefs.end();
@@ -235,7 +288,8 @@ bool bambuddy_mqtt_config_complete()
 
 const char *bambuddy_url(const char *path_fmt, ...)
 {
-    const int base_len = snprintf(url_buf, sizeof(url_buf), "%s/api/v1", cfg_url);
+    const int base_len =
+        snprintf(url_buf, sizeof(url_buf), "%s/api/v1", effective_base_url());
     if (base_len < 0 || (size_t)base_len >= sizeof(url_buf)) {
         url_buf[0] = '\0';
         return url_buf;
