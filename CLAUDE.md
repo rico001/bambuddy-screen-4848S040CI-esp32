@@ -143,6 +143,21 @@ hier nachsehen:
   Warteschlange ist in Sekunden, `remaining_time` im Druckerstatus wird als
   Minuten interpretiert — beim nächsten echten Druck gegen die Anzeige des
   Druckers prüfen (der Rohwert steht im Serial-Log).
+- **Beim AMS-Slot rechnet das Frontend mit, was die API verlangt.**
+  `POST /slots/{ams}/{tray}/configure` fordert `nozzle_temp_min/max`,
+  `tray_type` und `tray_info_idx` — in der Oberfläche gibt die niemand ein.
+  Bambuddys JavaScript leitet sie aus dem Profilnamen ab: Temperaturen aus
+  einer festen Materialtabelle (PLA 190–230, PETG/PCTG 220–260, ABS/ASA
+  240–280, TPU 200–240, PC 260–300, PA 250–290, sonst 190–230), bei lokalen
+  Presets aus deren eigenen Werten, falls vorhanden. `tray_info_idx` ist bei
+  integrierten Filamenten die `filament_id`, bei lokalen Presets **nicht**
+  die Preset-ID, sondern die generische Kurz-ID des Materials
+  (`PLA → GFL99`). `bambuddy_filament.cpp` bildet das nach — weicht es ab,
+  bekommt derselbe Slot je nach Bedienweg andere Temperaturen.
+  Nachzulesen im ausgelieferten Frontend: `{BASE_URL}/assets/index-*.js`,
+  Suche nach `configureAmsSlot`. Bei Zweifeln über das Verhalten der
+  Oberfläche ist das die verlässlichste Quelle — verlässlicher als die
+  API-Beschreibung, die bei `tray_info_idx` in die Irre führt.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
@@ -161,6 +176,9 @@ hier nachsehen:
 | `GET /queue/` · `POST /queue/` · `POST /queue/{id}/start` · `DELETE /queue/{id}` | `bambuddy_queue.cpp`, `bambuddy_archive.cpp` |
 | `GET /archives/` · `DELETE /archives/{id}` · `GET /archives/{id}/thumbnail` | `bambuddy_archive.cpp`, `bambuddy_cover.cpp` |
 | `GET /smart-plugs/` · `/{id}/status` · `POST /{id}/control` | `bambuddy_smart_plugs.cpp` |
+| `GET /cloud/builtin-filaments` · `GET /local-presets/` | `bambuddy_filament.cpp` |
+| `GET /printers/{id}/slot-presets` · `PUT /printers/{id}/slot-presets/{ams}/{tray}` | `bambuddy_filament.cpp` |
+| `POST /printers/{id}/slots/{ams}/{tray}/configure` · `POST /printers/{id}/ams/{ams}/tray/{tray}/reset` | `bambuddy_filament.cpp` |
 | `GET /updates/check` (Ersatz: `GET /updates/version`) | `bambuddy_version.cpp` |
 
 MQTT liest denselben Status über das Topic aus den Einstellungen

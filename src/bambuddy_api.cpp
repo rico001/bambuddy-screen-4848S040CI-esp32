@@ -18,6 +18,7 @@
 #include "bambuddy_cover.h"
 #include "bambuddy_mqtt.h"
 #include "bambuddy_queue.h"
+#include "bambuddy_filament.h"
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "bambuddy_version.h"
@@ -462,6 +463,7 @@ static void api_task(void *)
             bambuddy_queue_update();
             bambuddy_archive_update();
             bambuddy_smart_plugs_update();
+            bambuddy_filament_update();
 
             if (use_mqtt && ams_visible &&
                 (!last_ams_fetch_ms || millis() - last_ams_fetch_ms >= AMS_REFRESH_MS)) {
@@ -479,7 +481,8 @@ static void api_task(void *)
         // Bei offenem Kamera-Vollbild oefter aufwachen — sonst haenge der
         // 3-Sekunden-Takt am Leerlaufintervall von bis zu 30 Sekunden.
         if ((bambuddy_camera_active() || bambuddy_queue_visible() ||
-             bambuddy_archive_visible() || bambuddy_smart_plugs_visible()) && wait_ms > 500) {
+             bambuddy_archive_visible() || bambuddy_smart_plugs_visible() ||
+             bambuddy_filament_visible()) && wait_ms > 500) {
             wait_ms = 500;
         }
 

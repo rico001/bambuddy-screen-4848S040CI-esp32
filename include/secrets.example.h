@@ -6,6 +6,13 @@
 // Diese Werte sind nur Startwerte: Sie werden beim allerersten Boot ins NVS
 // geschrieben. Danach gilt immer, was im Einstellungs-Screen steht.
 
+// WLAN. Wird beim ersten Boot ins NVS uebernommen, danach gilt der
+// WLAN-Screen des Geraets. Leer lassen, um das Netz am Geraet zu waehlen.
+// "Netzwerk vergessen" wirkt dauerhaft und wird von diesen Werten nicht
+// wieder rueckgaengig gemacht.
+#define WIFI_DEFAULT_SSID ""
+#define WIFI_DEFAULT_PASS ""
+
 // Im Heimnetz http:// empfohlen. Jeder https-Abruf handelt eine TLS-Sitzung
 // aus; das kostet auf diesem Board so viel Rechenzeit und Speicherbandbreite,
 // dass das Bild sichtbar "zuckt". Der Schalter "Zertifikat pruefen" hilft

@@ -1,8 +1,10 @@
 #include "ams_screen.h"
 
+#include <Arduino.h>
 #include <string.h>
 
 #include "bambuddy_api.h"
+#include "filament_config_view.h"
 #include "ui_layout.h"
 #include "ui_util.h"
 
@@ -64,6 +66,38 @@ static void unit_name(const bambuddy_ams_unit_t &unit, char *out, size_t out_len
     }
 }
 
+// Antippen oeffnet die Filamentkonfiguration fuer genau diesen Slot. Welcher
+// gemeint ist, steckt in den Nutzdaten des Knopfes: AMS oben, Fach unten.
+static void slot_clicked_cb(lv_event_t *e)
+{
+    const uint32_t packed = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+    const int32_t ams_id = (int32_t)(packed >> 16);
+    const int32_t tray_id = (int32_t)(packed & 0xFFFF);
+
+    // Farbe und Beschriftung aus dem zuletzt angezeigten Stand holen — der
+    // Knopf selbst traegt sie nicht, und ein zweiter Zeiger darauf waere
+    // genau der Zeiger, der beim naechsten Neuaufbau ins Leere zeigt.
+    uint32_t color = 0xFFFFFF;
+    char label[48] = "AMS";
+    for (int i = 0; i < shown.ams_count; i++) {
+        if (shown.ams[i].id != ams_id) continue;
+
+        char name[20];
+        unit_name(shown.ams[i], name, sizeof(name));
+        snprintf(label, sizeof(label), "%s - Fach %d", name, (int)tray_id + 1);
+
+        if (tray_id >= 0 && tray_id < BB_AMS_MAX_TRAYS) {
+            const bambuddy_ams_tray_t &tray = shown.ams[i].trays[tray_id];
+            if (tray.exists) color = tray.color;
+        }
+        break;
+    }
+
+    Serial.printf("[AMS] Slot angetippt: AMS %d Fach %d\n", (int)ams_id,
+                  (int)tray_id + 1);
+    filament_config_open(ams_id, tray_id, label, color);
+}
+
 static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot_index)
 {
     const bambuddy_ams_tray_t &tray = unit.trays[slot_index];
@@ -73,13 +107,21 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_obj_set_size(slot, SLOT_W, 84);
     lv_obj_align(slot, LV_ALIGN_TOP_LEFT, PAD + slot_index * (SLOT_W + SLOT_GAP), 58);
     lv_obj_remove_flag(slot, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(slot, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(slot, slot_clicked_cb, LV_EVENT_CLICKED,
+                        (void *)(uintptr_t)(((uint32_t)unit.id << 16) |
+                                            ((uint32_t)slot_index & 0xFFFF)));
     lv_obj_set_style_radius(slot, 12, 0);
     lv_obj_set_style_pad_all(slot, 0, 0);
     lv_obj_set_style_border_width(slot, active ? 2 : 0, 0);
     lv_obj_set_style_border_color(slot, lv_color_hex(COL_ACCENT), 0);
 
     const uint32_t tray_color = tray.exists ? tray.color : COL_EMPTY;
+    // Kinder duerfen den Tipp nicht abfangen: lv_obj_create() macht jeden
+    // Behaelter anklickbar, und Punkt, Kern und Balken decken fast die
+    // gesamte Slot-Flaeche ab. Ohne das reagiert nur ein schmaler Streifen.
     lv_obj_t *dot = lv_obj_create(slot);
+    lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(dot, 36, 36);
     lv_obj_align(dot, LV_ALIGN_TOP_MID, 0, 4);
     lv_obj_remove_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
@@ -94,6 +136,7 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     // hellen oder dunklen Filamentfarben klar als Spule erkennbar.
     const uint32_t hub_color = contrast_color(tray_color);
     lv_obj_t *hub = lv_obj_create(dot);
+    lv_obj_remove_flag(hub, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(hub, 18, 18);
     lv_obj_remove_flag(hub, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(hub, 9, 0);
@@ -109,6 +152,7 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_obj_center(number);
 
     lv_obj_t *type = lv_label_create(slot);
+    lv_obj_remove_flag(type, LV_OBJ_FLAG_CLICKABLE);
     lv_label_set_text(type, tray.exists && tray.type[0] ? tray.type : "Leer");
     lv_obj_set_width(type, SLOT_W - 8);
     lv_label_set_long_mode(type, LV_LABEL_LONG_DOT);
@@ -118,6 +162,7 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_obj_align(type, LV_ALIGN_TOP_MID, 0, 42);
 
     lv_obj_t *remain = lv_bar_create(slot);
+    lv_obj_remove_flag(remain, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(remain, SLOT_W - 16, 7);
     lv_obj_align(remain, LV_ALIGN_BOTTOM_MID, 0, -7);
     lv_bar_set_range(remain, 0, 100);
@@ -201,6 +246,11 @@ static bool ams_changed(const bambuddy_status_t &next)
 
 static void ui_tick_cb(lv_timer_t *)
 {
+    // Solange die Konfiguration offen ist, bleibt die Liste stehen. Ein
+    // Neuaufbau wuerde den gerade angetippten Slot-Knopf loeschen, waehrend
+    // LVGL noch dessen Ereignis abarbeitet — das Geraet startet dann neu.
+    if (filament_config_is_open()) return;
+
     bambuddy_status_t next;
     if (!bambuddy_api_copy_status(&next)) return;
     if (!ams_changed(next)) return;

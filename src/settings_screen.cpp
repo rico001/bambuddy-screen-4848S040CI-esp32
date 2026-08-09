@@ -51,11 +51,13 @@ static constexpr int TZ_COUNT = 5;
 static constexpr int TZ_DEFAULT = 0; // Berlin
 static const char *tz_options = "Berlin\nLondon\nAthen\nUTC\nNew York";
 
-// Bildschirmabschaltung. "Aus" ist Standard: ein Wanddisplay, das von
-// selbst dunkel wird, ohne dass man es eingestellt hat, wirkt defekt.
+// Bildschirmabschaltung. Standard sind fuenf Minuten: lange genug, dass das
+// Display beim Vorbeigehen an bleibt, kurz genug, dass es nachts nicht die
+// ganze Zeit leuchtet. 15 Sekunden vor dem Abschalten dunkelt es ab — so
+// sieht man, dass gleich etwas passiert, und kann es antippen.
 static const uint32_t screen_off_ms[] = {0, 30000, 60000, 300000, 600000};
 static constexpr int SCREEN_OFF_COUNT = 5;
-static constexpr int SCREEN_OFF_DEFAULT = 0;
+static constexpr int SCREEN_OFF_DEFAULT = 3; // 5 Minuten
 static const char *screen_off_options =
     "Aus\n30 Sekunden\n1 Minute\n5 Minuten\n10 Minuten";
 
@@ -76,7 +78,9 @@ static lv_obj_t *brightness_slider;
 static lv_obj_t *brightness_value_lbl;
 static lv_obj_t *time_row_lbl;
 
-static bool dark_mode = false;
+// Dunkel ist Standard: Das Geraet haengt an der Wand, oft in einem Raum
+// ohne Deckenlicht. Ein weisser 480x480-Bildschirm blendet dort.
+static bool dark_mode = true;
 static bool tls_verify = true;
 static int brightness = 100;
 static int poll_idx = POLL_DEFAULT;
@@ -130,7 +134,7 @@ static int edit_row_idx = -1;
 static void load_settings()
 {
     prefs.begin("settings", true);
-    dark_mode = prefs.getBool("dark", false);
+    dark_mode = prefs.getBool("dark", true);
     tls_verify = prefs.getBool("tls", true);
     brightness = prefs.getInt("bright", 100);
     poll_idx = prefs.getInt("poll", POLL_DEFAULT);
