@@ -77,6 +77,7 @@ static lv_obj_t *chips_cont = nullptr;
 static lv_obj_t *hint_lbl = nullptr;
 static lv_obj_t *color_row = nullptr;
 static lv_obj_t *custom_btn = nullptr;
+static lv_obj_t *custom_lbl = nullptr;
 static lv_obj_t *apply_btn = nullptr;
 static lv_obj_t *apply_lbl = nullptr;
 static lv_timer_t *ui_timer = nullptr;
@@ -151,6 +152,67 @@ static void style_button(lv_obj_t *btn, uint32_t color)
     lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
     lv_obj_set_style_radius(btn, 10, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
+}
+
+// Bausteine des Kopfbereichs und der Fusszeile.
+//
+// Ohne sie stand jeder Knopf und jede Beschriftung als eigener Block aus
+// fuenf bis sieben fast gleichen Zeilen da — sechs Knoepfe, vier
+// Beschriftungen, sechs Farbfelder. Solche Kopien laufen beim naechsten
+// Anpassen auseinander: Man aendert die Schriftgroesse an drei Stellen und
+// uebersieht die vierte.
+
+// Gedaempfte Beschriftung ("Typ", "Farbe", "Temp", Pfeil).
+static lv_obj_t *make_caption(lv_obj_t *parent, const char *text, int x, int y)
+{
+    lv_obj_t *lbl = lv_label_create(parent);
+    lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, x, y);
+    return lbl;
+}
+
+// Wertzeile daneben. Feste Breite und Kuerzen statt Umbrechen: Eine zweite
+// Zeile wuerde in die naechste Kopfzeile hineinlaufen.
+static lv_obj_t *make_value(lv_obj_t *parent, int x, int y, int width)
+{
+    lv_obj_t *lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_width(lbl, width);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+    lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, x, y);
+    return lbl;
+}
+
+// Knopf mit zentrierter Beschriftung. Die Beschriftung ist sein erstes Kind
+// — wer sie spaeter aendern will, holt sie mit lv_obj_get_child(btn, 0).
+static lv_obj_t *make_button(lv_obj_t *parent, int w, int h, lv_align_t align, int dx,
+                             int dy, uint32_t color, const char *text, lv_event_cb_t cb)
+{
+    lv_obj_t *btn = lv_button_create(parent);
+    lv_obj_set_size(btn, w, h);
+    lv_obj_align(btn, align, dx, dy);
+    style_button(btn, color);
+    if (cb) lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *lbl = lv_label_create(btn);
+    lv_label_set_text(lbl, text);
+    lv_obj_center(lbl);
+    return btn;
+}
+
+// Farbfeld der Farbzeile. Bewusst ein lv_obj und kein Knopf: Der Knopf-Stil
+// des Themes legt sich sonst ueber die Farbe, die hier die ganze Aussage ist.
+static lv_obj_t *make_swatch(lv_obj_t *parent, int w, int h)
+{
+    lv_obj_t *swatch = lv_obj_create(parent);
+    lv_obj_set_size(swatch, w, h);
+    lv_obj_remove_flag(swatch, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_radius(swatch, 10, 0);
+    lv_obj_set_style_pad_all(swatch, 0, 0);
+    lv_obj_add_flag(swatch, LV_OBJ_FLAG_CLICKABLE);
+    return swatch;
 }
 
 // ============================================================
@@ -310,23 +372,10 @@ static void wheel_open()
     lv_obj_set_style_border_color(wheel_preview, lv_color_hex(0x555555), 0);
     wheel_update_preview();
 
-    lv_obj_t *cancel = lv_button_create(wheel_overlay);
-    lv_obj_set_size(cancel, 150, 56);
-    lv_obj_align(cancel, LV_ALIGN_TOP_LEFT, PAD + 104, 332);
-    style_button(cancel, COL_NEUTRAL);
-    lv_obj_add_event_cb(cancel, wheel_cancel_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t *cancel_lbl = lv_label_create(cancel);
-    lv_label_set_text(cancel_lbl, "Abbrechen");
-    lv_obj_center(cancel_lbl);
-
-    lv_obj_t *ok = lv_button_create(wheel_overlay);
-    lv_obj_set_size(ok, CONTENT_W - 104 - 158, 56);
-    lv_obj_align(ok, LV_ALIGN_TOP_RIGHT, -PAD, 332);
-    style_button(ok, COL_OK);
-    lv_obj_add_event_cb(ok, wheel_ok_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t *ok_lbl = lv_label_create(ok);
-    lv_label_set_text(ok_lbl, "Uebernehmen");
-    lv_obj_center(ok_lbl);
+    make_button(wheel_overlay, 150, 56, LV_ALIGN_TOP_LEFT, PAD + 104, 332, COL_NEUTRAL,
+                "Abbrechen", wheel_cancel_cb);
+    make_button(wheel_overlay, CONTENT_W - 104 - 158, 56, LV_ALIGN_TOP_RIGHT, -PAD, 332,
+                COL_OK, "Uebernehmen", wheel_ok_cb);
 }
 
 // ============================================================
@@ -368,6 +417,10 @@ static void update_color_row()
                 if (QUICK_COLORS[q] == chosen_color) selected = false;
             }
             ui_set_bg_color(swatch, chosen_color);
+            // Auch das Zeichen umfaerben, nicht nur den Grund. Es bekam
+            // seine Farbe frueher einmalig beim Aufbau — auf einer hellen
+            // Wunschfarbe verschwand das weisse Plus danach spurlos.
+            ui_set_text_color(custom_lbl, contrast_color(chosen_color));
         }
 
         lv_obj_set_style_border_width(swatch, selected ? 3 : 1, 0);
@@ -723,6 +776,7 @@ static void close_view()
     hint_lbl = nullptr;
     color_row = nullptr;
     custom_btn = nullptr;
+    custom_lbl = nullptr;
     apply_btn = nullptr;
     apply_lbl = nullptr;
 
@@ -822,71 +876,33 @@ static void build(const char *slot_label)
     title_lbl = lv_label_create(overlay);
     lv_label_set_text(title_lbl, slot_label);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
-    // Breite begrenzen und kuerzen lassen: "AMS-A - Fach 1 (Bambu Support
-    // For PLA/PETG)" waere sonst breiter als der Bildschirm und schoebe sich
-    // unter den Schliessen-Knopf.
     lv_obj_set_width(title_lbl, SCREEN_W - (PAD + 4) - (44 + PAD) - 8);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 8);
 
-    // Erste Zeile: das Filament, alt und neu. Beschriftung an derselben
-    // Stelle wie die der Farbzeile darunter, damit beide Werte buendig
-    // beginnen.
-    type_caption = lv_label_create(overlay);
-    lv_label_set_text(type_caption, "Typ");
-    lv_obj_set_style_text_font(type_caption, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(type_caption, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(type_caption, LV_ALIGN_TOP_LEFT, PAD + 4, FILAMENT_Y);
+    // Drei Zeilen im Kopf: Filament, Farbe, Temperaturen — jeweils links die
+    // Beschriftung, rechts der Wert. Alle Werte beginnen an derselben
+    // x-Position, sonst wirkte eine Zeile eingerueckt ohne erkennbaren Grund.
+    //
+    // Die Filamentzeile endet vor dem Schliessen-Knopf, der bis y40 hinunter
+    // reicht. Die beiden Zeilen darunter liegen frei und duerfen breiter sein.
+    type_caption = make_caption(overlay, "Typ", PAD + 4, FILAMENT_Y);
+    preview_lbl = make_value(overlay, PAD + 52, FILAMENT_Y,
+                             SCREEN_W - (PAD + 52) - (44 + PAD) - 8);
 
-    preview_lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_font(preview_lbl, &lv_font_montserrat_12, 0);
-    // Breite endet vor dem Schliessen-Knopf: Der reicht bis y40 hinunter und
-    // laege sonst ueber dem Zeilenende. Die Farbzeile darunter beginnt erst
-    // bei y48 und darf die volle Breite nutzen.
-    lv_obj_set_width(preview_lbl, SCREEN_W - (PAD + 52) - (44 + PAD) - 8);
-    lv_label_set_long_mode(preview_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_align(preview_lbl, LV_ALIGN_TOP_LEFT, PAD + 52, FILAMENT_Y);
-
-    // Zweite Zeile: die Farbe. Hier ist die Beschriftung noetig — zwei
-    // Kreise allein sagen nicht, wofuer sie stehen.
-    color_caption = lv_label_create(overlay);
-    lv_label_set_text(color_caption, "Farbe");
-    lv_obj_set_style_text_font(color_caption, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(color_caption, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(color_caption, LV_ALIGN_TOP_LEFT, PAD + 4, COLOR_LINE_Y);
-
+    color_caption = make_caption(overlay, "Farbe", PAD + 4, COLOR_LINE_Y);
     preview_dot_old = make_dot(overlay, PAD + 52, COLOR_LINE_Y - 1);
+    preview_arrow = make_caption(overlay, LV_SYMBOL_RIGHT, PAD + 72, COLOR_LINE_Y);
     preview_dot_new = make_dot(overlay, PAD + 92, COLOR_LINE_Y - 1);
 
-    preview_arrow = lv_label_create(overlay);
-    lv_label_set_text(preview_arrow, LV_SYMBOL_RIGHT);
-    lv_obj_set_style_text_font(preview_arrow, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(preview_arrow, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(preview_arrow, LV_ALIGN_TOP_LEFT, PAD + 72, COLOR_LINE_Y);
+    // Die Temperaturen gibt niemand ein — sie werden aus dem Profil
+    // hergeleitet. Hier stehen sie, bevor sie an den Drucker gehen.
+    temp_caption = make_caption(overlay, "Temp", PAD + 4, TEMP_LINE_Y);
+    temp_lbl = make_value(overlay, PAD + 52, TEMP_LINE_Y,
+                          SCREEN_W - (PAD + 52) - PAD - 8);
 
-    // Dritte Zeile: die Duesentemperaturen. Sie werden nirgends eingegeben,
-    // sondern aus dem Profil hergeleitet — hier stehen sie, bevor sie an den
-    // Drucker gehen.
-    temp_caption = lv_label_create(overlay);
-    lv_label_set_text(temp_caption, "Temp");
-    lv_obj_set_style_text_font(temp_caption, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(temp_caption, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(temp_caption, LV_ALIGN_TOP_LEFT, PAD + 4, TEMP_LINE_Y);
-
-    temp_lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_font(temp_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_width(temp_lbl, SCREEN_W - (PAD + 52) - PAD - 8);
-    lv_label_set_long_mode(temp_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_align(temp_lbl, LV_ALIGN_TOP_LEFT, PAD + 52, TEMP_LINE_Y);
-
-    lv_obj_t *close = lv_button_create(overlay);
-    lv_obj_set_size(close, 44, HEADER_H - 8);
-    lv_obj_align(close, LV_ALIGN_TOP_RIGHT, -PAD, 4);
-    style_button(close, COL_NEUTRAL);
-    lv_obj_add_event_cb(close, close_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t *close_lbl = lv_label_create(close);
-    lv_label_set_text(close_lbl, LV_SYMBOL_CLOSE);
-    lv_obj_center(close_lbl);
+    make_button(overlay, 44, HEADER_H - 8, LV_ALIGN_TOP_RIGHT, -PAD, 4, COL_NEUTRAL,
+                LV_SYMBOL_CLOSE, close_cb);
 
     // Materialfilter: 86 integrierte Profile sind sonst nur mit langem
     // Wischen erreichbar.
@@ -927,57 +943,29 @@ static void build(const char *slot_label)
 
     const int swatch_w = (CONTENT_W - QUICK_COLOR_COUNT * 8) / (QUICK_COLOR_COUNT + 1);
     for (int i = 0; i < QUICK_COLOR_COUNT; i++) {
-        lv_obj_t *swatch = lv_obj_create(color_row);
-        lv_obj_set_size(swatch, swatch_w, COLOR_H);
-        lv_obj_remove_flag(swatch, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_radius(swatch, 10, 0);
-        lv_obj_set_style_pad_all(swatch, 0, 0);
+        lv_obj_t *swatch = make_swatch(color_row, swatch_w, COLOR_H);
         lv_obj_set_style_bg_color(swatch, lv_color_hex(QUICK_COLORS[i]), 0);
         lv_obj_set_user_data(swatch, (void *)(uintptr_t)QUICK_COLORS[i]);
-        lv_obj_add_flag(swatch, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_add_event_cb(swatch, quick_color_cb, LV_EVENT_CLICKED,
                             (void *)(uintptr_t)QUICK_COLORS[i]);
     }
 
-    custom_btn = lv_obj_create(color_row);
-    lv_obj_set_size(custom_btn, swatch_w, COLOR_H);
-    lv_obj_remove_flag(custom_btn, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(custom_btn, 10, 0);
-    lv_obj_set_style_pad_all(custom_btn, 0, 0);
-    lv_obj_add_flag(custom_btn, LV_OBJ_FLAG_CLICKABLE);
+    // Letztes Feld: die eigene Farbe. Es zeigt die aktuelle Wahl und oeffnet
+    // das Farbrad.
+    custom_btn = make_swatch(color_row, swatch_w, COLOR_H);
     lv_obj_add_event_cb(custom_btn, custom_color_cb, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_t *custom_lbl = lv_label_create(custom_btn);
+    custom_lbl = lv_label_create(custom_btn);
     lv_label_set_text(custom_lbl, LV_SYMBOL_PLUS);
-    lv_obj_set_style_text_color(custom_lbl, lv_color_hex(contrast_color(chosen_color)), 0);
     lv_obj_center(custom_lbl);
 
-    lv_obj_t *reset = lv_button_create(overlay);
-    lv_obj_set_size(reset, 130, FOOT_H);
-    lv_obj_align(reset, LV_ALIGN_TOP_LEFT, PAD, FOOT_Y);
-    style_button(reset, COL_ERR);
-    lv_obj_add_event_cb(reset, reset_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t *reset_lbl = lv_label_create(reset);
-    lv_label_set_text(reset_lbl, "Leeren");
-    lv_obj_center(reset_lbl);
+    make_button(overlay, 130, FOOT_H, LV_ALIGN_TOP_LEFT, PAD, FOOT_Y, COL_ERR, "Leeren",
+                reset_cb);
+    make_button(overlay, 110, FOOT_H, LV_ALIGN_TOP_LEFT, PAD + 138, FOOT_Y, COL_NEUTRAL,
+                "Abbrechen", close_cb);
 
-    lv_obj_t *cancel = lv_button_create(overlay);
-    lv_obj_set_size(cancel, 110, FOOT_H);
-    lv_obj_align(cancel, LV_ALIGN_TOP_LEFT, PAD + 138, FOOT_Y);
-    style_button(cancel, COL_NEUTRAL);
-    lv_obj_add_event_cb(cancel, close_cb, LV_EVENT_CLICKED, nullptr);
-    lv_obj_t *cancel_lbl = lv_label_create(cancel);
-    lv_label_set_text(cancel_lbl, "Abbrechen");
-    lv_obj_center(cancel_lbl);
-
-    apply_btn = lv_button_create(overlay);
-    lv_obj_set_size(apply_btn, CONTENT_W - 138 - 118, FOOT_H);
-    lv_obj_align(apply_btn, LV_ALIGN_TOP_RIGHT, -PAD, FOOT_Y);
-    style_button(apply_btn, COL_OK);
-    lv_obj_add_event_cb(apply_btn, apply_cb, LV_EVENT_CLICKED, nullptr);
-    apply_lbl = lv_label_create(apply_btn);
-    lv_label_set_text(apply_lbl, "Konfigurieren");
-    lv_obj_center(apply_lbl);
+    apply_btn = make_button(overlay, CONTENT_W - 138 - 118, FOOT_H, LV_ALIGN_TOP_RIGHT,
+                            -PAD, FOOT_Y, COL_OK, "Konfigurieren", apply_cb);
+    apply_lbl = lv_obj_get_child(apply_btn, 0);
 
     ui_timer = lv_timer_create(tick_cb, 300, nullptr);
     lv_timer_set_repeat_count(ui_timer, -1);

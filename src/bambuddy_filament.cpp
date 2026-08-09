@@ -555,6 +555,27 @@ static void save_slot_preset(const bambuddy_filament_preset_t &p, int32_t ams_id
     }
 }
 
+// Ausgang beider Schreibvorgaenge. Vorher stand dieser Block zweimal fast
+// wortgleich da — einmal in configure_slot, einmal in reset_slot.
+static bool report_write(const char *what, int code, const char *detail)
+{
+    if (code >= 200 && code < 300) return true;
+
+    Serial.printf("[Filament] %s -> HTTP %d%s%s\n", what, code, detail[0] ? " | " : "",
+                  detail);
+
+    // Den Klartext des Servers bevorzugen: Er nennt oft den Grund und den
+    // vorgesehenen Weg, wo eine blosse Zahl nur ratlos macht.
+    if (detail[0]) {
+        set_message(detail);
+    } else {
+        char text[48];
+        snprintf(text, sizeof(text), "Fehlgeschlagen (HTTP %d)", code);
+        set_message(text);
+    }
+    return false;
+}
+
 static bool configure_slot(const configure_request_t &req)
 {
     bambuddy_filament_preset_t p;
@@ -609,24 +630,14 @@ static bool configure_slot(const configure_request_t &req)
 
     char detail[80];
     const int code = send_post(url, detail, sizeof(detail));
-    if (code >= 200 && code < 300) {
-        save_slot_preset(p, req.ams_id, req.tray_id);
-        char text[80];
-        snprintf(text, sizeof(text), "%s gesetzt", p.name);
-        set_message(text);
-        return true;
-    }
+    if (!report_write("configure", code, detail)) return false;
 
-    Serial.printf("[Filament] configure -> HTTP %d%s%s\n", code, detail[0] ? " | " : "",
-                  detail);
-    if (detail[0]) {
-        set_message(detail);
-    } else {
-        char text[48];
-        snprintf(text, sizeof(text), "Fehlgeschlagen (HTTP %d)", code);
-        set_message(text);
-    }
-    return false;
+    save_slot_preset(p, req.ams_id, req.tray_id);
+
+    char text[80];
+    snprintf(text, sizeof(text), "%s gesetzt", p.name);
+    set_message(text);
+    return true;
 }
 
 static bool reset_slot(const configure_request_t &req)
@@ -638,21 +649,10 @@ static bool reset_slot(const configure_request_t &req)
 
     char detail[80];
     const int code = send_post(url, detail, sizeof(detail));
-    if (code >= 200 && code < 300) {
-        set_message("Slot zurueckgesetzt");
-        return true;
-    }
+    if (!report_write("reset", code, detail)) return false;
 
-    Serial.printf("[Filament] reset -> HTTP %d%s%s\n", code, detail[0] ? " | " : "",
-                  detail);
-    if (detail[0]) {
-        set_message(detail);
-    } else {
-        char text[48];
-        snprintf(text, sizeof(text), "Fehlgeschlagen (HTTP %d)", code);
-        set_message(text);
-    }
-    return false;
+    set_message("Slot zurueckgesetzt");
+    return true;
 }
 
 // ============================================================
