@@ -386,10 +386,13 @@ const char *bambuddy_hms_text(const char *code)
 
 const char *bambuddy_hms_severity_text(int32_t severity)
 {
+    // Eine durchgaengige Leiter statt gemischter Begriffe. "normal" fuer
+    // Stufe 3 stand frueher direkt neben "ernst" und las sich, als sei
+    // alles in Ordnung.
     switch (severity) {
-    case 1: return "schwer";
-    case 2: return "ernst";
-    case 3: return "normal";
+    case 1: return "kritisch";
+    case 2: return "Fehler";
+    case 3: return "Warnung";
     case 4: return "Hinweis";
     case BB_HMS_SEVERITY_OK: return "fertig";
     default: break;
