@@ -76,6 +76,18 @@ const char *bambuddy_hms_severity_text(int32_t severity);
 // nur dann neu auf.
 bool bambuddy_hms_take_fresh();
 
+// Ausstehende Aenderung ins NVS schreiben, falls faellig.
+//
+// Muss regelmaessig aus dem Netzwerk-Task gerufen werden. Warum nicht
+// sofort beim Eintragen: Ein Flash-Schreibvorgang legt auf dem ESP32 kurz
+// den Befehls-Cache still, und da der Code aus dem Flash laeuft, steht in
+// dem Moment auch die Oberflaeche. Genau beim Zustandswechsel — wenn
+// ohnehin die halbe Kachel neu gezeichnet wird — faellt das als Ruckeln auf.
+//
+// Ein paar Sekunden Versatz kosten im schlimmsten Fall den letzten Eintrag
+// bei einem Stromausfall. Das ist der bessere Handel.
+void bambuddy_hms_flush();
+
 // Protokoll leeren, auch im NVS. Folgenreich und nicht rueckgaengig zu
 // machen — die Ansicht fragt vorher nach.
 void bambuddy_hms_clear();
