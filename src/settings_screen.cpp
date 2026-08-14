@@ -92,6 +92,10 @@ static lv_obj_t *settings_list;
 static lv_obj_t *dark_switch;
 static lv_obj_t *tls_switch;
 static lv_obj_t *guard_switch;
+static lv_obj_t *log_start_switch;
+static lv_obj_t *log_done_switch;
+static lv_obj_t *log_error_switch;
+static lv_obj_t *log_boot_switch;
 static lv_obj_t *poll_dd;
 static lv_obj_t *tz_dd;
 static lv_obj_t *brightness_slider;
@@ -106,6 +110,13 @@ static bool tls_verify = true;
 // schlimmsten Fall ein Werkstueck und eine Duese — wer die Sperre nicht will,
 // schaltet sie bewusst ab.
 static bool start_guard = true;
+
+// Protokollumfang. Alles an als Standard: Ein Protokoll, das man erst
+// einschalten muss, ist beim ersten Bedarf leer.
+static bool log_print_start = true;
+static bool log_print_done = true;
+static bool log_errors = true;
+static bool log_boot = true;
 static int brightness = 100;
 static int poll_idx = POLL_DEFAULT;
 static int tz_idx = TZ_DEFAULT;
@@ -163,6 +174,10 @@ static void load_settings()
     dark_mode = prefs.getBool("dark", true);
     tls_verify = prefs.getBool("tls", true);
     start_guard = prefs.getBool("startguard", true);
+    log_print_start = prefs.getBool("logstart", true);
+    log_print_done = prefs.getBool("logdone", true);
+    log_errors = prefs.getBool("logerr", true);
+    log_boot = prefs.getBool("logboot", true);
     brightness = prefs.getInt("bright", 100);
     poll_idx = prefs.getInt("poll", POLL_DEFAULT);
     tz_idx = prefs.getInt("tz", TZ_DEFAULT);
@@ -187,6 +202,10 @@ static void save_settings()
     prefs.putBool("dark", dark_mode);
     prefs.putBool("tls", tls_verify);
     prefs.putBool("startguard", start_guard);
+    prefs.putBool("logstart", log_print_start);
+    prefs.putBool("logdone", log_print_done);
+    prefs.putBool("logerr", log_errors);
+    prefs.putBool("logboot", log_boot);
     prefs.putInt("bright", brightness);
     prefs.putInt("poll", poll_idx);
     prefs.putInt("tz", tz_idx);
@@ -774,6 +793,19 @@ static void guard_switch_cb(lv_event_t *)
     save_settings();
 }
 
+// Ein Rueckruf fuer alle vier: Welches Ziel gemeint ist, steht in den
+// Nutzdaten. Vier fast gleiche Funktionen waeren vier Gelegenheiten, das
+// Speichern in einer davon zu vergessen.
+static void log_switch_cb(lv_event_t *e)
+{
+    bool *target = (bool *)lv_event_get_user_data(e);
+    lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(e);
+    if (!target || !sw) return;
+
+    *target = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    save_settings();
+}
+
 static void screen_off_dd_cb(lv_event_t *)
 {
     screen_off_idx = lv_dropdown_get_selected(screen_off_dd);
@@ -942,6 +974,37 @@ void settings_screen_create(lv_obj_t *parent)
     settings_add_text_row(LV_SYMBOL_LIST, "Status-Topic",
                           bambuddy_mqtt_topic, bambuddy_set_mqtt_topic, false, false);
 
+    // --- Protokoll ---
+    settings_add_section("PROTOKOLL");
+
+    struct log_row_t {
+        const char *icon;
+        const char *title;
+        const char *subtitle;
+        bool *value;
+        lv_obj_t **handle;
+    };
+
+    const log_row_t log_rows[] = {
+        {LV_SYMBOL_PLAY, "Druckstart", "Beginn eines Auftrags vermerken",
+         &log_print_start, &log_start_switch},
+        {LV_SYMBOL_OK, "Druck fertig", "Fertige Drucke vermerken", &log_print_done,
+         &log_done_switch},
+        {LV_SYMBOL_WARNING, "Fehler", "Druckerfehler und Abbrueche vermerken",
+         &log_errors, &log_error_switch},
+        {LV_SYMBOL_POWER, "Systemstart", "Neustarts des Displays vermerken", &log_boot,
+         &log_boot_switch},
+    };
+
+    for (const log_row_t &row : log_rows) {
+        lv_obj_t *parent_row = settings_add_row(row.icon, row.title, row.subtitle);
+        lv_obj_t *sw = lv_switch_create(parent_row);
+        lv_obj_set_size(sw, 58, 32);
+        if (*row.value) lv_obj_add_state(sw, LV_STATE_CHECKED);
+        lv_obj_add_event_cb(sw, log_switch_cb, LV_EVENT_VALUE_CHANGED, row.value);
+        *row.handle = sw;
+    }
+
     // --- Zeit ---
     settings_add_section("ZEIT");
 
@@ -970,6 +1033,10 @@ void settings_screen_destroy()
     dark_switch = nullptr;
     tls_switch = nullptr;
     guard_switch = nullptr;
+    log_start_switch = nullptr;
+    log_done_switch = nullptr;
+    log_error_switch = nullptr;
+    log_boot_switch = nullptr;
     poll_dd = nullptr;
     tz_dd = nullptr;
     screen_off_dd = nullptr;
@@ -998,6 +1065,16 @@ uint32_t settings_poll_interval_idle_ms()
 bool settings_start_guard()
 {
     return start_guard;
+}
+
+bool settings_log_print_start() { return log_print_start; }
+bool settings_log_print_done() { return log_print_done; }
+bool settings_log_errors() { return log_errors; }
+bool settings_log_boot() { return log_boot; }
+
+bool settings_log_any()
+{
+    return log_print_start || log_print_done || log_errors || log_boot;
 }
 
 bool settings_tls_verify() { return tls_verify; }

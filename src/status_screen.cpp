@@ -77,6 +77,7 @@ static lv_obj_t *light_btn_lbl;
 static lv_obj_t *speed_btn;
 static lv_obj_t *speed_btn_lbl;
 
+static lv_obj_t *log_btn;
 static lv_obj_t *message_lbl;
 // Fehlertext aus update_link(). Die Fusszeile entscheidet danach, was
 // tatsaechlich zu sehen ist — Fehler haben Vorrang vor allem anderen.
@@ -667,6 +668,24 @@ static void wake_on_state_change()
     if (state_changed || job_changed || plate_asked) settings_screen_wake();
 }
 
+// Ist im Protokoll alles abgeschaltet, fuehrt der Knopf zu einer garantiert
+// leeren Liste — dann weg damit. Die Badge rueckt in die Luecke nach, sonst
+// klafft rechts ein Loch, das nach einem Fehler aussieht.
+static void update_log_button()
+{
+    if (!log_btn || !badge) return;
+
+    const bool show = settings_log_any();
+    if (show == !lv_obj_has_flag(log_btn, LV_OBJ_FLAG_HIDDEN)) return;
+
+    if (show) {
+        lv_obj_remove_flag(log_btn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(log_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + (show ? 3 : 2) * (52 + 8)), 8);
+}
+
 static void ui_tick_cb(lv_timer_t *)
 {
     if (bambuddy_api_take(&status)) {
@@ -681,6 +700,7 @@ static void ui_tick_cb(lv_timer_t *)
     if (have_status) update_status_fields();
 
     update_link();
+    update_log_button();
     update_cover();
     update_controls();
     update_camera_overlay();
@@ -845,7 +865,7 @@ static void build_header(lv_obj_t *parent)
 
     // Protokoll der Druckermeldungen. Gehoert hierher und nicht auf die
     // Systemkachel: Was der Drucker gemeldet hat, sucht man beim Drucker.
-    lv_obj_t *log_btn = lv_button_create(parent);
+    log_btn = lv_button_create(parent);
     lv_obj_set_size(log_btn, 52, 30);
     lv_obj_align(log_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
     lv_obj_set_style_radius(log_btn, 10, 0);
