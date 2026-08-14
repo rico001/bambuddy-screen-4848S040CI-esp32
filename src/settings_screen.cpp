@@ -96,6 +96,7 @@ static lv_obj_t *log_start_switch;
 static lv_obj_t *log_done_switch;
 static lv_obj_t *log_error_switch;
 static lv_obj_t *log_boot_switch;
+static lv_obj_t *log_persist_switch;
 static lv_obj_t *poll_dd;
 static lv_obj_t *tz_dd;
 static lv_obj_t *brightness_slider;
@@ -117,6 +118,7 @@ static bool log_print_start = true;
 static bool log_print_done = true;
 static bool log_errors = true;
 static bool log_boot = true;
+static bool log_persist = true;
 static int brightness = 100;
 static int poll_idx = POLL_DEFAULT;
 static int tz_idx = TZ_DEFAULT;
@@ -178,6 +180,7 @@ static void load_settings()
     log_print_done = prefs.getBool("logdone", true);
     log_errors = prefs.getBool("logerr", true);
     log_boot = prefs.getBool("logboot", true);
+    log_persist = prefs.getBool("logpersist", true);
     brightness = prefs.getInt("bright", 100);
     poll_idx = prefs.getInt("poll", POLL_DEFAULT);
     tz_idx = prefs.getInt("tz", TZ_DEFAULT);
@@ -206,6 +209,7 @@ static void save_settings()
     prefs.putBool("logdone", log_print_done);
     prefs.putBool("logerr", log_errors);
     prefs.putBool("logboot", log_boot);
+    prefs.putBool("logpersist", log_persist);
     prefs.putInt("bright", brightness);
     prefs.putInt("poll", poll_idx);
     prefs.putInt("tz", tz_idx);
@@ -975,7 +979,7 @@ void settings_screen_create(lv_obj_t *parent)
                           bambuddy_mqtt_topic, bambuddy_set_mqtt_topic, false, false);
 
     // --- Protokoll ---
-    settings_add_section("PROTOKOLL");
+    settings_add_section("MELDUNGEN");
 
     struct log_row_t {
         const char *icon;
@@ -994,6 +998,8 @@ void settings_screen_create(lv_obj_t *parent)
          &log_errors, &log_error_switch},
         {LV_SYMBOL_POWER, "Systemstart", "Neustarts des Displays vermerken", &log_boot,
          &log_boot_switch},
+        {LV_SYMBOL_SAVE, "Dauerhaft speichern", "Aus: kein Flimmern, aber weg nach Neustart",
+         &log_persist, &log_persist_switch},
     };
 
     for (const log_row_t &row : log_rows) {
@@ -1037,6 +1043,7 @@ void settings_screen_destroy()
     log_done_switch = nullptr;
     log_error_switch = nullptr;
     log_boot_switch = nullptr;
+    log_persist_switch = nullptr;
     poll_dd = nullptr;
     tz_dd = nullptr;
     screen_off_dd = nullptr;
@@ -1071,6 +1078,12 @@ bool settings_log_print_start() { return log_print_start; }
 bool settings_log_print_done() { return log_print_done; }
 bool settings_log_errors() { return log_errors; }
 bool settings_log_boot() { return log_boot; }
+bool settings_log_persist() { return log_persist; }
+
+uint32_t settings_display_idle_ms()
+{
+    return lv_display_get_inactive_time(nullptr);
+}
 
 bool settings_log_any()
 {

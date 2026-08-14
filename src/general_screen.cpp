@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 
+#include "bambuddy_hms.h"
 #include "bambuddy_version.h"
 #include "jog_screen.h"
 #include "settings_screen.h"
@@ -132,7 +133,16 @@ static void add_version_badge()
 // mitten im Ereignis neu.
 static void restart_async(void *)
 {
-    delay(200);
+    // Ausstehende Protokolleintraege noch sichern. Der uebliche Weg wartet
+    // auf einen ruhigen Moment — den gibt es hier nicht mehr, und ein kurzer
+    // Streifen unmittelbar vor dem Neustart faellt niemandem auf.
+    bambuddy_hms_flush_now();
+
+    // 500 statt der frueheren 200 ms. Noetig waere es nicht — putBytes und
+    // end() schreiben synchron und kehren erst zurueck, wenn das NVS
+    // festgeschrieben ist. Aber ein Neustart ist nicht rueckgaengig zu
+    // machen, und drei Zehntelsekunden mehr merkt niemand.
+    delay(500);
     ESP.restart();
 }
 

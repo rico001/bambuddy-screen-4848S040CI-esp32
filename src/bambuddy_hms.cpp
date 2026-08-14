@@ -95,10 +95,33 @@ static bool backfilled = false;
 static bool dirty = false;
 static uint32_t dirty_since_ms = 0;
 
-// So lange nach der letzten Aenderung wird gewartet, bevor geschrieben wird.
-// Lang genug, dass der Neuaufbau der Kachel vorbei ist; kurz genug, dass ein
-// Eintrag nicht wirklich verlorengeht.
-static constexpr uint32_t FLUSH_DELAY_MS = 3000;
+// Wann wird geschrieben?
+//
+// Auf dem ESP32-S3 haengen Flash und PSRAM am selben SPI-Controller.
+// Waehrend eines Flash-Schreibvorgangs ist der Cache abgeschaltet und der
+// Zugriff auf den PSRAM blockiert — dort liegt aber der Bildpuffer, aus dem
+// das Panel fortlaufend per DMA liest. Ihm fehlen dann fuer einige
+// Millisekunden die Pixel, und das sieht man als Streifen.
+//
+// Verhindern laesst sich das nicht, nur verstecken: indem geschrieben wird,
+// wenn niemand hinsieht.
+//
+// Deshalb zwei Bedingungen, und beide muessen gelten:
+//
+//   - Sechs Minuten ohne Beruehrung. Wer davorsteht und bedient, soll nichts
+//     davon mitbekommen; ein Wanddisplay steht die meiste Zeit ohnehin still.
+//     Laenger als die Bildschirmabschaltung (fuenf Minuten), damit der
+//     Zugriff im Regelfall in einen dunklen oder ruhenden Schirm faellt.
+//   - Ein paar Sekunden Abstand zum ausloesenden Ereignis. Faellt ein Druck
+//     nachts fertig, ist die Untaetigkeitsgrenze laengst ueberschritten —
+//     der Neuaufbau der Kachel laeuft aber trotzdem gerade.
+//
+// Bewusst ohne hartes Zeitlimit: Ein Schreibvorgang, der sich nach einer
+// Weile doch aufdraengt, waere genau das, was hier vermieden werden soll.
+// Der Preis ist, dass ein Eintrag bei einem Stromausfall verlorengeht,
+// solange niemand das Geraet in Ruhe laesst.
+static constexpr uint32_t FLUSH_DELAY_MS = 5000;
+static constexpr uint32_t FLUSH_IDLE_MS = 360000;
 
 // Ein Puffer fuer Lesen und Schreiben. Zwei eigene waeren zusammen ueber
 // drei Kilobyte internes RAM, dauerhaft belegt fuer etwas, das ein paar Mal
@@ -108,6 +131,10 @@ static uint8_t nvs_buffer[sizeof(blob_header_t) + sizeof(entries)];
 // Nur vormerken. Geschrieben wird spaeter in bambuddy_hms_flush().
 static void mark_dirty()
 {
+    // Ohne dauerhafte Ablage gibt es nichts zu schreiben — und damit keinen
+    // Flash-Zugriff, der dem Panel die Pixel wegnimmt.
+    if (!settings_log_persist()) return;
+
     dirty = true;
     dirty_since_ms = millis();
 }
@@ -477,17 +504,30 @@ const char *bambuddy_hms_severity_text(int32_t severity)
     return text;
 }
 
-void bambuddy_hms_flush()
+static void flush_locked_now()
 {
-    if (!dirty || !log_mutex) return;
-    if (millis() - dirty_since_ms < FLUSH_DELAY_MS) return;
-
     xSemaphoreTake(log_mutex, portMAX_DELAY);
     if (dirty) {
         dirty = false;
         write_locked();
     }
     xSemaphoreGive(log_mutex);
+}
+
+void bambuddy_hms_flush()
+{
+    if (!dirty || !log_mutex) return;
+
+    if (millis() - dirty_since_ms < FLUSH_DELAY_MS) return;
+    if (settings_display_idle_ms() < FLUSH_IDLE_MS) return;
+
+    flush_locked_now();
+}
+
+void bambuddy_hms_flush_now()
+{
+    if (!dirty || !log_mutex) return;
+    flush_locked_now();
 }
 
 void bambuddy_hms_clear()
