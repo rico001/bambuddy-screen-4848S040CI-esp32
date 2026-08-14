@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "bambuddy_api.h"
+#include "bambuddy_hms.h"
 
 // HTTP-Antwort und MQTT-Payload tragen dieselben Feldnamen — deshalb wertet
 // beides dieselbe Funktion aus. Einziger Unterschied: im MQTT-Payload heisst
@@ -131,6 +132,39 @@ static inline void bambuddy_status_from_json(JsonDocument &doc, bambuddy_status_
             if (tray_id + 1 > unit.tray_count) unit.tray_count = tray_id + 1;
         }
     }
+    // Fehlerliste des Druckers ins Log geben. Sie steht im Status nur,
+    // solange sie anliegt — das Mitschreiben passiert deshalb hier, bei
+    // jedem Eingang, und nicht erst beim Oeffnen einer Ansicht.
+    //
+    // Nur wenn das Feld ueberhaupt dabei war: Der AMS-Abruf benutzt denselben
+    // Parser, aber einen Filter ohne hms_errors. Er wuerde sonst regelmaessig
+    // einen leeren Satz melden, die Flankenerkennung zuruecksetzen und
+    // denselben anstehenden Fehler immer wieder neu eintragen.
+    if (!doc["hms_errors"].isNull()) {
+        char hms_codes[BB_HMS_ACTIVE_MAX][24];
+        int32_t hms_sev[BB_HMS_ACTIVE_MAX];
+        int hms_count = 0;
+
+        for (JsonObject err : doc["hms_errors"].as<JsonArray>()) {
+            if (hms_count >= BB_HMS_ACTIVE_MAX) break;
+
+            const char *code = err["full_code"] | err["code"] | "";
+            if (!code[0]) continue;
+
+            bambuddy_copy_field(hms_codes[hms_count], sizeof(hms_codes[0]), code);
+            hms_sev[hms_count] = err["severity"] | 0;
+            hms_count++;
+        }
+        bambuddy_hms_report(hms_codes, hms_sev, hms_count);
+    }
+
+    // Zustandswechsel ins Log. Auch hier nur, wenn das Feld dabei war: Der
+    // AMS-Abruf filtert "state" weg und wuerde sonst einen Wechsel nach ""
+    // melden — und damit beim naechsten vollen Status den Abbruch erneut.
+    if (!doc["state"].isNull()) {
+        bambuddy_hms_report_state(out->state, out->job);
+    }
+
     out->awaiting_plate_clear = doc["awaiting_plate_clear"] | false;
     out->speed_level = doc["speed_level"] | 0;
 }

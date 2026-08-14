@@ -560,6 +560,11 @@ static void plugs_cb(lv_event_t *)
     ui_nav_smart_plugs();
 }
 
+static void messages_cb(lv_event_t *)
+{
+    ui_nav_messages();
+}
+
 static void jog_cb(lv_event_t *)
 {
     ui_nav_jog();
@@ -804,10 +809,10 @@ static void build_header(lv_obj_t *parent)
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
     lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
-    // Schmaler als frueher: Rechts stehen jetzt zwei Sprungknoepfe, und der
-    // Name darf der Badge nicht in die Quere kommen. Zu lange Namen kuerzt
-    // LVGL mit Punkten.
-    lv_obj_set_width(name_lbl, 150);
+    // Schmal halten: Rechts stehen drei Sprungknoepfe und die Badge, und der
+    // Name darf ihr nicht in die Quere kommen. Zu lange Namen kuerzt LVGL
+    // mit Punkten — der Name ist hier die entbehrlichste Angabe.
+    lv_obj_set_width(name_lbl, 106);
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
 
@@ -838,6 +843,19 @@ static void build_header(lv_obj_t *parent)
     lv_label_set_text(jog_icon, LV_SYMBOL_SHUFFLE);
     lv_obj_center(jog_icon);
 
+    // Protokoll der Druckermeldungen. Gehoert hierher und nicht auf die
+    // Systemkachel: Was der Drucker gemeldet hat, sucht man beim Drucker.
+    lv_obj_t *log_btn = lv_button_create(parent);
+    lv_obj_set_size(log_btn, 52, 30);
+    lv_obj_align(log_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
+    lv_obj_set_style_radius(log_btn, 10, 0);
+    lv_obj_set_style_bg_color(log_btn, lv_color_hex(COL_NEUTRAL), 0);
+    lv_obj_add_event_cb(log_btn, messages_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *log_icon = lv_label_create(log_btn);
+    lv_label_set_text(log_icon, LV_SYMBOL_BELL);
+    lv_obj_center(log_icon);
+
     // Fester Abstand vom rechten Rand statt Ausrichtung am Knopf: Die Badge
     // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
     // dass die Position neu berechnet werden muss.
@@ -847,7 +865,7 @@ static void build_header(lv_obj_t *parent)
     // dadurch unsauber ausgerichtet.
     lv_obj_set_height(badge, 30);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 3 * (52 + 8)), 8);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(badge, 15, 0); // halbe Hoehe: bleibt eine Kapsel
     lv_obj_set_style_border_width(badge, 0, 0);

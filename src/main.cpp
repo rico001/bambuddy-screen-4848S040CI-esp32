@@ -13,10 +13,14 @@
 #include "settings_screen.h"
 #include "status_bar.h"
 #include "status_screen.h"
+#include "bambuddy_hms.h"
+#include "hms_screen.h"
+#include "nav_bar.h"
+#include "ui_fullscreen.h"
 #include "ui_layout.h"
 #include "ui_nav.h"
+#include "ui_theme.h"
 #include "ui_watch.h"
-#include "nav_bar.h"
 #include "wifi_screen.h"
 
 // --- Globals ---
@@ -76,26 +80,36 @@ void ui_nav_jog()
     general_screen_show_jog();
 }
 
+void ui_nav_messages()
+{
+    ui_fullscreen_open("Meldungen", COL_NEUTRAL, hms_screen_create, hms_screen_destroy);
+}
+
 
 // Beim Start sagen, warum zuletzt neu gestartet wurde. Ohne diese Zeile
 // bleibt nach einem unbeobachteten Reset nur Raten: Absturz, Watchdog und
 // Spannungseinbruch sehen im Nachhinein identisch aus.
-static void log_reset_reason()
+// Liefert den Grund im Klartext und sagt, ob er unerwartet war. Beides
+// landet auch im Meldungsprotokoll: Ein Neustart um drei Uhr nachts ist eine
+// Information, die man am naechsten Morgen sucht.
+static const char *reset_reason_text(bool *unexpected)
 {
     const char *text;
+    *unexpected = false;
+
     switch (esp_reset_reason()) {
     case ESP_RST_POWERON:  text = "Einschalten"; break;
     case ESP_RST_SW:       text = "Neustart durch Software"; break;
-    case ESP_RST_PANIC:    text = "ABSTURZ (Exception/Panic)"; break;
-    case ESP_RST_TASK_WDT: text = "Task-Watchdog: ein Task hat blockiert"; break;
-    case ESP_RST_INT_WDT:  text = "Interrupt-Watchdog"; break;
-    case ESP_RST_WDT:      text = "sonstiger Watchdog"; break;
-    case ESP_RST_BROWNOUT: text = "SPANNUNGSEINBRUCH (Netzteil/USB-Kabel)"; break;
+    case ESP_RST_PANIC:    text = "ABSTURZ (Exception/Panic)"; *unexpected = true; break;
+    case ESP_RST_TASK_WDT: text = "Task-Watchdog: ein Task hat blockiert"; *unexpected = true; break;
+    case ESP_RST_INT_WDT:  text = "Interrupt-Watchdog"; *unexpected = true; break;
+    case ESP_RST_WDT:      text = "sonstiger Watchdog"; *unexpected = true; break;
+    case ESP_RST_BROWNOUT: text = "SPANNUNGSEINBRUCH (Netzteil/USB-Kabel)"; *unexpected = true; break;
     case ESP_RST_DEEPSLEEP:text = "Aufwachen aus Deep Sleep"; break;
     case ESP_RST_EXT:      text = "Reset-Pin"; break;
     default:               text = "unbekannt"; break;
     }
-    Serial.printf("\n[Start] Letzter Neustart: %s\n", text);
+    return text;
 }
 
 // --- Setup & Loop ---
@@ -120,13 +134,20 @@ void setup()
 {
     Serial.begin(115200);
     delay(200); // kurz warten, sonst verschluckt der Monitor die erste Zeile
-    log_reset_reason();
+
+    bool unexpected_restart = false;
+    const char *restart_reason = reset_reason_text(&unexpected_restart);
+    Serial.printf("\n[Start] Letzter Neustart: %s\n", restart_reason);
 
     smartdisplay_init();
 
     // Theme vor dem Bau der Screens setzen, sonst blitzt kurz das falsche auf
     settings_apply_saved();
     bambuddy_config_load();
+
+    // Erst hier, nicht ganz oben: Das Protokoll liegt im NVS, und der ist
+    // nach smartdisplay_init() und dem Laden der Einstellungen bereit.
+    bambuddy_hms_report_boot(restart_reason, unexpected_restart);
 
     // Statusleiste liegt fest oben, die Screens darunter
     status_bar_create(lv_screen_active());
