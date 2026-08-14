@@ -62,17 +62,18 @@ static constexpr int SCREEN_OFF_DEFAULT = 3; // 5 Minuten
 static const char *screen_off_options =
     "Aus\n30 Sekunden\n1 Minute\n5 Minuten\n10 Minuten";
 
-// Bildschirmschoner. "Aus" laesst das Display wie bisher dunkel werden;
-// "Uhr" zeigt stattdessen die Uhrzeit gross an. Beides haengt an derselben
+// Bildschirmschoner. "Aus" laesst das Display wie bisher dunkel werden,
+// "Uhr" zeigt Uhrzeit und Druckerzustand, "Matrix" fallende Zeichen. Alles
+// haengt an derselben
 // Untaetigkeitsgrenze wie die Abschaltung — steht die auf "Aus", passiert
 // gar nichts, und der Bildschirm bleibt dauerhaft an.
-static constexpr int SAVER_COUNT = 2;
+static constexpr int SAVER_COUNT = 3;
 static constexpr int SAVER_DEFAULT = SCREENSAVER_OFF;
-static const char *saver_options = "Aus\nUhr";
+static const char *saver_options = "Aus\nUhr\nMatrix";
 
-// Die Uhr leuchtet gedaempft: hell genug zum Ablesen aus dem Zimmer, dunkel
-// genug, um nicht zu stoeren. Nachts noch einmal deutlich weniger — ein
-// Wanddisplay, das um drei Uhr mit 30 Prozent ins Zimmer leuchtet, will
+// Der Schoner leuchtet gedaempft: hell genug zum Ablesen aus dem Zimmer,
+// dunkel genug, um nicht zu stoeren. Nachts noch einmal deutlich weniger —
+// ein Wanddisplay, das um drei Uhr mit 30 Prozent ins Zimmer leuchtet, will
 // niemand.
 static constexpr float SAVER_BACKLIGHT = 0.30f;
 static constexpr float SAVER_BACKLIGHT_NIGHT = 0.10f;
@@ -238,9 +239,8 @@ static void apply_brightness()
     set_backlight(brightness_to_backlight(brightness));
 }
 
-// Helligkeit der Uhr nach Tageszeit. Wird laufend nachgezogen, denn der
-// Bildschirmschoner steht womoeglich stundenlang und ueberschreitet dabei
-// die Grenze.
+// Helligkeit des Bildschirmschoners nach Tageszeit. Wird laufend nachgezogen,
+// denn er laeuft womoeglich stundenlang und ueberschreitet dabei die Grenze.
 static float saver_backlight()
 {
     const time_t now = time(nullptr);
@@ -296,24 +296,24 @@ static void set_screen_level(screen_level_t level)
         // Ohne gestellte Uhr bleibt es bei der Abschaltung — eine erfundene
         // Uhrzeit gross ins Zimmer zu leuchten waere schlimmer als ein
         // dunkler Bildschirm.
-        if (saver_idx == SCREENSAVER_CLOCK && screensaver_clock_available()) {
-            screensaver_show(true);
-            set_catcher(true); // Weckflaeche ueber die Uhr legen
+        if (screensaver_mode_available((screensaver_mode_t)saver_idx)) {
+            screensaver_show((screensaver_mode_t)saver_idx);
+            set_catcher(true); // Weckflaeche ueber den Schoner legen
             set_backlight(saver_backlight());
             break;
         }
-        screensaver_show(false);
+        screensaver_show(SCREENSAVER_OFF);
         set_catcher(true);
         set_backlight(0.0f);
         break;
     case SCREEN_DIM:
-        screensaver_show(false);
+        screensaver_show(SCREENSAVER_OFF);
         set_catcher(false);
         set_backlight(DIM_BACKLIGHT);
         break;
     case SCREEN_ON:
     default:
-        screensaver_show(false);
+        screensaver_show(SCREENSAVER_OFF);
         set_catcher(false);
         set_backlight(brightness_to_backlight(brightness));
         break;
@@ -352,9 +352,9 @@ static void sleep_check_cb(lv_timer_t *)
 
     if (idle >= timeout) {
         set_screen_level(SCREEN_OFF);
-        // Die Uhr steht womoeglich stundenlang. set_screen_level() laeuft
-        // nur beim Wechsel, die Nachtabsenkung braucht aber einen Blick auf
-        // die Uhrzeit — der gehoert hierher.
+        // Der Schoner laeuft womoeglich stundenlang. set_screen_level()
+        // greift nur beim Wechsel, die Nachtabsenkung braucht aber einen
+        // Blick auf die Uhrzeit — der gehoert hierher.
         if (screensaver_visible()) set_backlight(saver_backlight());
     } else if (idle >= dim_at) {
         set_screen_level(SCREEN_DIM);
@@ -759,9 +759,13 @@ static void saver_dd_cb(lv_event_t *)
     saver_idx = (int)lv_dropdown_get_selected(saver_dd);
     save_settings();
 
-    // Laeuft die Uhr gerade und wird abgewaehlt, muss sie sofort weg —
-    // sonst bliebe sie stehen, bis das naechste Mal geweckt wird.
-    if (saver_idx != SCREENSAVER_CLOCK) screensaver_show(false);
+    // Laeuft gerade ein Schoner und die Wahl aendert sich, sofort umstellen —
+    // sonst bliebe der alte stehen, bis das naechste Mal geweckt wird.
+    if (screensaver_visible()) {
+        screensaver_show(screensaver_mode_available((screensaver_mode_t)saver_idx)
+                             ? (screensaver_mode_t)saver_idx
+                             : SCREENSAVER_OFF);
+    }
 }
 
 static void guard_switch_cb(lv_event_t *)

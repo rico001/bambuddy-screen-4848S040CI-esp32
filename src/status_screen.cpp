@@ -140,17 +140,64 @@ static const char *state_text(const char *state, uint32_t *color_out)
     return state[0] ? state : "Unbekannt";
 }
 
+// Restzeit und, wenn die Uhr steht, die voraussichtliche Fertig-Uhrzeit.
+//
+// "noch 5 h 12 min" muss man im Kopf auf die Uhr addieren; bei einem langen
+// Druck ist genau das die Frage, die man hat. Der Tag steht mit dabei,
+// sobald das Ende nicht mehr auf den heutigen faellt — "fertig 07:20" waere
+// sonst zwoelf Stunden zu frueh verstanden.
 static void format_remaining(int32_t minutes, char *out, size_t out_len)
 {
     if (minutes <= 0) {
-        strncpy(out, "", out_len);
+        if (out_len) out[0] = '\0';
         return;
     }
+
+    char span[32];
     if (minutes < 60) {
-        snprintf(out, out_len, "noch %d min", (int)minutes);
+        snprintf(span, sizeof(span), "noch %d min", (int)minutes);
     } else {
-        snprintf(out, out_len, "noch %d h %02d min", (int)(minutes / 60), (int)(minutes % 60));
+        snprintf(span, sizeof(span), "noch %d h %02d min", (int)(minutes / 60),
+                 (int)(minutes % 60));
     }
+
+    // Ohne NTP stuende dort eine Uhrzeit aus dem Startwert des Chips.
+    if (!settings_time_synced()) {
+        strncpy(out, span, out_len - 1);
+        out[out_len - 1] = '\0';
+        return;
+    }
+
+    const time_t now = time(nullptr);
+    const time_t done = now + (time_t)minutes * 60;
+
+    struct tm tm_done;
+    struct tm tm_now;
+    localtime_r(&done, &tm_done);
+    localtime_r(&now, &tm_now);
+
+    // Nach Kalendertagen unterscheiden, nicht nach 24 Stunden — siehe
+    // Fusszeile.
+    struct tm midnight = tm_now;
+    midnight.tm_hour = 0;
+    midnight.tm_min = 0;
+    midnight.tm_sec = 0;
+    midnight.tm_isdst = -1;
+    const time_t today_start = mktime(&midnight);
+
+    char day[12] = "";
+    if (done >= today_start + 2 * 86400) {
+        // Modulo, damit der Compiler die Laenge belegen kann: Er kennt die
+        // Wertebereiche von struct tm nicht und rechnet sonst mit elf
+        // Stellen je Zahl.
+        snprintf(day, sizeof(day), "%d.%d. ", tm_done.tm_mday % 100,
+                 (tm_done.tm_mon + 1) % 100);
+    } else if (done >= today_start + 86400) {
+        snprintf(day, sizeof(day), "morgen ");
+    }
+
+    snprintf(out, out_len, "%s - fertig %s%02d:%02d", span, day, tm_done.tm_hour,
+             tm_done.tm_min);
 }
 
 // Der Knopf traegt die aktuelle Stufe, angetippt oeffnet er die Auswahl.
@@ -340,7 +387,8 @@ static void update_status_fields()
     // den letzten Wert weiter — der zaehlt dann nicht mehr runter und waere
     // schlicht falsch.
     if (job_active) {
-        char buf[32];
+        // Reicht fuer "noch 12 h 34 min - fertig morgen 07:20".
+        char buf[64];
         format_remaining(status.remaining_min, buf, sizeof(buf));
         ui_set_text(remaining_lbl, buf);
     } else {
