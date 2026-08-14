@@ -18,8 +18,8 @@ static constexpr int CARD_Y = 48;
 static constexpr int CARD_H = 62;
 static constexpr int CONTENT_Y = CARD_Y + CARD_H + 10; // 120
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD;   // 456
-// Nutzbare Hoehe unterhalb der Statusleiste, nicht die volle Displayhoehe
-static constexpr int VIEW_H = CONTENT_H - CONTENT_Y - PAD;
+// Volle Displayhoehe: Die Ansicht liegt als Vollbild ueber den Kacheln.
+static constexpr int VIEW_H = SCREEN_H - CONTENT_Y - PAD;
 static constexpr int KEYBOARD_H = 190;
 static constexpr int ROW_H = 52; // Touch-Ziel: nie unter 44px
 
@@ -794,11 +794,6 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, uint32_t color,
 
 static void build_header(lv_obj_t *parent)
 {
-    lv_obj_t *title = lv_label_create(parent);
-    lv_label_set_text(title, "WLAN");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 52, 14);
-
     scan_btn = make_button(parent, LV_SYMBOL_REFRESH "  Scannen", COL_ACCENT,
                            scan_btn_cb, &scan_btn_lbl);
     lv_obj_set_size(scan_btn, 140, 40);

@@ -735,6 +735,40 @@ bool bambuddy_api_awaiting_plate_clear()
     return awaiting;
 }
 
+const char *bambuddy_api_start_blocked_reason()
+{
+    if (!status_mutex) return "";
+
+    char state[sizeof(shared_status.state)];
+    bool connected;
+
+    xSemaphoreTake(status_mutex, portMAX_DELAY);
+    connected = shared_status.printer_connected;
+    strncpy(state, shared_status.state, sizeof(state) - 1);
+    state[sizeof(state) - 1] = '\0';
+    xSemaphoreGive(status_mutex);
+
+    if (!connected) return "Bambuddy hat keine Verbindung zum Drucker.";
+    if (!state_has_job(state)) return "";
+
+    if (strcasecmp(state, "RUNNING") == 0 || strcasecmp(state, "printing") == 0) {
+        return "Es laeuft bereits ein Druck.";
+    }
+    if (strcasecmp(state, "PREPARE") == 0 || strcasecmp(state, "preparing") == 0) {
+        return "Der Drucker bereitet gerade einen Druck vor.";
+    }
+    if (strcasecmp(state, "PAUSE") == 0 || strcasecmp(state, "paused") == 0) {
+        return "Ein Druck ist pausiert und noch nicht beendet.";
+    }
+
+    // state ist ein freier String vom Drucker, kein Enum der API. Unbekannte
+    // Werte durchreichen statt verschlucken — sonst steht da "nicht bereit"
+    // ohne jeden Anhaltspunkt.
+    static char reason[64];
+    snprintf(reason, sizeof(reason), "Der Drucker ist beschaeftigt (%s).", state);
+    return reason;
+}
+
 bool bambuddy_api_has_active_job()
 {
     if (!status_mutex) return false;

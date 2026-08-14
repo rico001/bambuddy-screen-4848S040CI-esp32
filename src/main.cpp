@@ -16,6 +16,7 @@
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_watch.h"
+#include "nav_bar.h"
 #include "wifi_screen.h"
 
 // --- Globals ---
@@ -37,36 +38,44 @@ static void tile_changed_cb(lv_event_t *)
     queue_screen_set_visible(queue_visible);
     archive_screen_set_visible(archive_visible);
     general_screen_set_visible(general_visible);
+
+    // Die Leiste muss auch dem Wischen folgen, nicht nur dem Antippen —
+    // sonst zeigt sie nach einer Geste noch auf die vorherige Kachel.
+    lv_obj_t *const active = lv_tileview_get_tile_active(tileview);
+    if (active == ams_tile) nav_bar_set_active(0);
+    else if (active == status_tile) nav_bar_set_active(1);
+    else if (active == queue_tile) nav_bar_set_active(2);
+    else if (active == archive_tile) nav_bar_set_active(3);
+    else if (active == general_tile) nav_bar_set_active(4);
 }
 
-// Sprung vom Statusscreen direkt zu den Smart Plugs: erst die Kachel
-// wechseln, dann dort die Unteransicht oeffnen. Ohne den Kachelwechsel
-// wuerde die Ansicht aufgebaut, waehrend sie niemand sieht.
+void ui_nav_tile(int index)
+{
+    lv_obj_t *const tiles[] = {ams_tile, status_tile, queue_tile, archive_tile,
+                               general_tile};
+    if (!tileview || index < 0 || index >= (int)(sizeof(tiles) / sizeof(tiles[0]))) {
+        return;
+    }
+    if (!tiles[index]) return;
+
+    lv_tileview_set_tile(tileview, tiles[index], LV_ANIM_OFF);
+    tile_changed_cb(nullptr);
+}
+
+// Smart Plugs und Jog-Steuerung liegen als Vollbild ueber allem. Ein
+// Kachelwechsel ist dafuer nicht mehr noetig — und auch nicht mehr richtig:
+// Der Zurueck-Knopf soll dorthin zurueckfuehren, wo man war, nicht auf die
+// Systemkachel, die man nie aufgesucht hat.
 void ui_nav_smart_plugs()
 {
-    if (!tileview || !general_tile) return;
-
-    lv_tileview_set_tile(tileview, general_tile, LV_ANIM_OFF);
-    tile_changed_cb(nullptr);
     general_screen_show_smart_plugs();
 }
 
 void ui_nav_jog()
 {
-    if (!tileview || !general_tile) return;
-
-    lv_tileview_set_tile(tileview, general_tile, LV_ANIM_OFF);
-    tile_changed_cb(nullptr);
     general_screen_show_jog();
 }
 
-void ui_nav_status()
-{
-    if (!tileview || !status_tile) return;
-
-    lv_tileview_set_tile(tileview, status_tile, LV_ANIM_OFF);
-    tile_changed_cb(nullptr);
-}
 
 // Beim Start sagen, warum zuletzt neu gestartet wurde. Ohne diese Zeile
 // bleibt nach einem unbeobachteten Reset nur Raten: Absturz, Watchdog und
@@ -128,6 +137,10 @@ void setup()
     lv_obj_align(tileview, LV_ALIGN_TOP_MID, 0, STATUS_BAR_H);
     lv_obj_set_style_border_width(tileview, 0, 0);
     lv_obj_set_style_radius(tileview, 0, 0);
+    // Kein Rollbalken am unteren Rand: Welche Kachel offen ist, sagt jetzt
+    // die Navigationsleiste — der Balken haette dieselbe Auskunft ein
+    // zweites Mal gegeben, direkt darueber.
+    lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t *tile1 = lv_tileview_add_tile(tileview, 0, 0, (lv_dir_t)LV_DIR_RIGHT);
     lv_obj_t *tile2 = lv_tileview_add_tile(tileview, 1, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
@@ -152,6 +165,11 @@ void setup()
     archive_tile = tile4;
     general_tile = tile5;
     lv_obj_add_event_cb(tileview, tile_changed_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    // Nach dem Tileview angelegt, damit die Leiste darueber liegt und von
+    // einer Wischgeste auf der Kachel nicht verdeckt wird.
+    nav_bar_create(lv_screen_active());
+    nav_bar_set_active(1); // Startkachel ist der Status
 
     log_memory("Screens gebaut");
 

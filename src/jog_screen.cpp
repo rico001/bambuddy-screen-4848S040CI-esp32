@@ -229,11 +229,6 @@ void jog_screen_create(lv_obj_t *parent)
     local_message_ms = 0;
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = lv_label_create(parent);
-    lv_label_set_text(title, "Jog-Steuerung");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 52, 14);
-
     lv_obj_t *warning_btn = lv_button_create(parent);
     lv_obj_set_size(warning_btn, 40, 40);
     lv_obj_align(warning_btn, LV_ALIGN_TOP_RIGHT, -PAD, 6);
