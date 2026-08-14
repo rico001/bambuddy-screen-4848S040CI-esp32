@@ -31,7 +31,7 @@
 // am Drucker quittiert statt dieses Protokoll zu leeren — zwei verschiedene
 // Dinge, die man nicht verwechseln sollte.
 
-#define BB_HMS_LOG_MAX 15
+#define BB_HMS_LOG_MAX 30
 
 // Eigene Stufe fuer Erfolgsmeldungen. Bewusst negativ: Die Schweregrade des
 // Druckers beginnen bei 1, und 0 ist dort der Wert fuer "nicht angegeben" —
