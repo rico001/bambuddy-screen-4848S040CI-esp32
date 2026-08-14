@@ -294,11 +294,16 @@ void bambuddy_hms_report(const char codes[][24], const int32_t *severities, int 
 
     xSemaphoreTake(log_mutex, portMAX_DELAY);
 
+    // Der zuletzt gesehene Satz wird auch dann fortgeschrieben, wenn nichts
+    // eingetragen wird — sonst gaebe ein spaeter eingeschalteter Schalter
+    // alle laengst anstehenden Fehler auf einen Schlag ins Protokoll.
+    const bool wanted = settings_log_errors();
+
     for (int i = 0; i < count; i++) {
         if (!codes[i][0] || was_active(codes[i])) continue;
+        if (!wanted) continue;
 
-        add_entry(codes[i], hms_text(codes[i]),
-                  severities ? severities[i] : 0);
+        add_entry(codes[i], hms_text(codes[i]), severities ? severities[i] : 0);
         fresh = true;
     }
 
@@ -363,7 +368,13 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     const bool started = is_job_state(state) && !was_job;
     was_job = is_job_state(state);
 
-    if (!failed && !finished && !started) {
+    // Nach dem Fortschreiben der Merker pruefen, nicht davor: Ein
+    // ausgeschalteter Eintrag darf die Flankenerkennung nicht aushebeln.
+    const bool wanted = (started && settings_log_print_start()) ||
+                        (finished && settings_log_print_done()) ||
+                        (failed && settings_log_errors());
+
+    if (!wanted) {
         xSemaphoreGive(log_mutex);
         return;
     }
@@ -387,6 +398,8 @@ void bambuddy_hms_report_state(const char *state, const char *job)
 
 void bambuddy_hms_report_boot(const char *reason, bool unexpected)
 {
+    if (!settings_log_boot()) return;
+
     char text[64];
     job_text("Display gestartet", reason, text, sizeof(text));
 

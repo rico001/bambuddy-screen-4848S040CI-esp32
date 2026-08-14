@@ -31,6 +31,19 @@ bool settings_tls_verify();
 // Druckplatte und schicken den Start ab.
 bool settings_start_guard();
 
+// Was soll ins Meldungsprotokoll? Einzeln schaltbar, weil die Ansprueche
+// auseinandergehen: Wer nur wissen will, was schiefging, braucht keine
+// Startmeldungen.
+bool settings_log_print_start();
+bool settings_log_print_done();
+bool settings_log_errors();
+bool settings_log_boot();
+
+// Wird ueberhaupt irgendetwas protokolliert? Ist alles aus, blendet der
+// Status-Screen seinen Knopf aus — ein Knopf, der zu einer garantiert leeren
+// Liste fuehrt, ist nur im Weg.
+bool settings_log_any();
+
 // POSIX-Zeitzonenstring, z.B. "CET-1CEST,M3.5.0,M10.5.0/3"
 const char *settings_timezone();
 
