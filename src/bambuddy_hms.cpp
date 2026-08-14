@@ -123,10 +123,26 @@ static uint32_t dirty_since_ms = 0;
 static constexpr uint32_t FLUSH_DELAY_MS = 5000;
 static constexpr uint32_t FLUSH_IDLE_MS = 360000;
 
-// Ein Puffer fuer Lesen und Schreiben. Zwei eigene waeren zusammen ueber
-// drei Kilobyte internes RAM, dauerhaft belegt fuer etwas, das ein paar Mal
-// am Tag gebraucht wird.
-static uint8_t nvs_buffer[sizeof(blob_header_t) + sizeof(entries)];
+// Ein Puffer fuer Lesen und Schreiben, angelegt beim ersten Bedarf und im
+// PSRAM.
+//
+// Zwei eigene waeren zusammen ueber drei Kilobyte. Und selbst einer gehoert
+// nicht in den internen Speicher: 1,7 KB dauerhaft fuer etwas, das ein paar
+// Mal am Tag gebraucht wird, waehrend der interne Vorrat auf diesem Board
+// die knappe Groesse ist. Im PSRAM faellt es nicht ins Gewicht.
+static constexpr size_t NVS_BUFFER_SIZE = sizeof(blob_header_t) + sizeof(entries);
+static uint8_t *nvs_buffer = nullptr;
+
+static bool ensure_buffer()
+{
+    if (nvs_buffer) return true;
+
+    nvs_buffer = (uint8_t *)ps_malloc(NVS_BUFFER_SIZE);
+    if (!nvs_buffer) {
+        Serial.println("[HMS] Kein Speicher fuer die Ablage — Protokoll bleibt fluechtig");
+    }
+    return nvs_buffer != nullptr;
+}
 
 // Nur vormerken. Geschrieben wird spaeter in bambuddy_hms_flush().
 static void mark_dirty()
@@ -141,6 +157,8 @@ static void mark_dirty()
 
 static void write_locked()
 {
+    if (!ensure_buffer()) return;
+
     blob_header_t header = {BLOB_VERSION, (uint16_t)entry_count};
 
     // Kopf und Eintraege in einem Stueck: Zwei Schluessel koennten bei einem
@@ -160,11 +178,12 @@ static void load_once()
     if (loaded) return;
     loaded = true;
 
+    if (!ensure_buffer()) return;
+
     prefs.begin(NVS_NS, true);
     const size_t size = prefs.getBytesLength(NVS_KEY);
 
-    if (size < sizeof(blob_header_t) ||
-        size > sizeof(blob_header_t) + sizeof(entries)) {
+    if (size < sizeof(blob_header_t) || size > NVS_BUFFER_SIZE) {
         prefs.end();
         return;
     }
