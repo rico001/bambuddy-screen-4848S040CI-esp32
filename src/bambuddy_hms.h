@@ -88,6 +88,11 @@ bool bambuddy_hms_take_fresh();
 // bei einem Stromausfall. Das ist der bessere Handel.
 void bambuddy_hms_flush();
 
+// Sofort schreiben, ohne auf einen ruhigen Moment zu warten. Fuer den
+// gewollten Neustart: Dort ist ein kurzer Streifen gleichgueltig, ein
+// verlorener Eintrag nicht.
+void bambuddy_hms_flush_now();
+
 // Protokoll leeren, auch im NVS. Folgenreich und nicht rueckgaengig zu
 // machen — die Ansicht fragt vorher nach.
 void bambuddy_hms_clear();
