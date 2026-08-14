@@ -15,3 +15,7 @@ void ui_nav_smart_plugs();
 
 // Dasselbe fuer die Jog-Steuerung.
 void ui_nav_jog();
+
+// Protokoll der Druckermeldungen. Sitzt bewusst nicht mehr auf der
+// Systemkachel: Was der Drucker gemeldet hat, sucht man beim Drucker.
+void ui_nav_messages();

@@ -192,6 +192,8 @@ static void poll_status()
     filter["chamber_light"] = true;
     add_ams_filter(filter);
     filter["awaiting_plate_clear"] = true;
+    // Fehlerliste: ohne Eintrag im Filter kaeme sie gar nicht erst an.
+    filter["hms_errors"] = true;
     filter["speed_level"] = true;
 
     JsonDocument doc;
