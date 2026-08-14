@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include <time.h>
 
 #include <WiFi.h>
 
@@ -25,18 +26,22 @@
 static constexpr int PAD = 12;
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD; // 456
 
-// Senkrechtes Budget (CONTENT_H = 454, siehe ui_layout.h):
+// Senkrechtes Budget (CONTENT_H = 414, siehe ui_layout.h):
 //   Kopfzeile        0 ..  46
 //   Auftragskarte   46 .. 258
-//   Temperaturen   266 .. 348
-//   Steuerung      356 .. 408
-//   Fusszeile      unten
+//   Temperaturen   266 .. 326
+//   Steuerung      334 .. 386
+//   Fusszeile      394 .. 408 (unten ausgerichtet)
+//
+// Die Temperaturkarten sind flacher als frueher: Seit die Navigationsleiste
+// unten 40 Pixel belegt, endet die Kachel bei 414 statt 454, und die
+// Fusszeile lag sonst ueber den Steuerknoepfen.
 static constexpr int JOB_Y = 46;
 static constexpr int JOB_H = 212;
 static constexpr int TEMP_Y = 266;
-static constexpr int TEMP_H = 82;
+static constexpr int TEMP_H = 60;
 static constexpr int TEMP_W = (CONTENT_W - 12) / 2;
-static constexpr int CTRL_Y = 356;
+static constexpr int CTRL_Y = 334;
 static constexpr int CTRL_H = 52;
 static constexpr int CTRL_GAP = 8;
 static constexpr int CTRL_W = (CONTENT_W - 4 * CTRL_GAP) / 5;
@@ -657,10 +662,61 @@ static void ui_tick_cb(lv_timer_t *)
     const uint32_t age_s = (millis() - status.updated_ms) / 1000;
     if (age_s < 5) {
         ui_set_text_fmt(message_lbl, "%s - gerade aktualisiert", source);
-    } else if (age_s < 120) {
+        return;
+    }
+    if (age_s < 120) {
         ui_set_text_fmt(message_lbl, "%s - vor %d s", source, (int)age_s);
-    } else {
+        return;
+    }
+    if (age_s < 3600) {
         ui_set_text_fmt(message_lbl, "%s - vor %d min", source, (int)(age_s / 60));
+        return;
+    }
+
+    // Ab einer Stunde ist die Zeitspanne keine Hilfe mehr: "vor 97 min" muss
+    // man erst zurueckrechnen. Die Uhrzeit steht direkt da.
+    //
+    // Nur mit gestellter Uhr — ohne NTP steht sie auf dem Startwert des
+    // Chips, und eine falsche Uhrzeit waere schlechter als eine grobe
+    // Spanne. Der Tag steht mit dabei, sonst waere "14:32" nicht einzuordnen.
+    if (!settings_time_synced()) {
+        ui_set_text_fmt(message_lbl, "%s - vor %d h", source, (int)(age_s / 3600));
+        return;
+    }
+
+    const time_t now = time(nullptr);
+    const time_t when = now - (time_t)age_s;
+
+    struct tm tm_when;
+    struct tm tm_now;
+    localtime_r(&when, &tm_when);
+    localtime_r(&now, &tm_now);
+
+    // Nach Kalendertag unterscheiden, nicht nach Stunden. "Weniger als 24
+    // Stunden her" heisst nicht "heute": Um ein Uhr nachts liegen zwanzig
+    // Stunden zurueck am Vortag, und "heute, 05:00 Uhr" waere schlicht
+    // falsch.
+    struct tm midnight = tm_now;
+    midnight.tm_hour = 0;
+    midnight.tm_min = 0;
+    midnight.tm_sec = 0;
+    midnight.tm_isdst = -1; // Sommerzeit von mktime bestimmen lassen
+    const time_t today_start = mktime(&midnight);
+
+    const char *day = "";
+    if (when >= today_start) {
+        day = "heute";
+    } else if (when >= today_start - 86400) {
+        day = "gestern";
+    }
+
+    if (day[0]) {
+        ui_set_text_fmt(message_lbl, "%s - %s %02d:%02d Uhr", source, day,
+                        tm_when.tm_hour, tm_when.tm_min);
+    } else {
+        ui_set_text_fmt(message_lbl, "%s - %02d.%02d. %02d:%02d Uhr", source,
+                        tm_when.tm_mday, tm_when.tm_mon + 1, tm_when.tm_hour,
+                        tm_when.tm_min);
     }
 }
 
@@ -738,11 +794,14 @@ static void build_header(lv_obj_t *parent)
     // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
     // dass die Position neu berechnet werden muss.
     badge = lv_obj_create(parent);
-    lv_obj_set_height(badge, 28);
+    // Genauso hoch wie die beiden Sprungknoepfe rechts daneben (52 x 30).
+    // Zwei Pixel Unterschied sieht man nicht bewusst, aber die Zeile wirkt
+    // dadurch unsauber ausgerichtet.
+    lv_obj_set_height(badge, 30);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
     lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(badge, 15, 0);
+    lv_obj_set_style_radius(badge, 15, 0); // halbe Hoehe: bleibt eine Kapsel
     lv_obj_set_style_border_width(badge, 0, 0);
     lv_obj_set_style_pad_hor(badge, 12, 0);
     lv_obj_set_style_pad_ver(badge, 0, 0);
@@ -852,12 +911,12 @@ static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(color), 0);
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 7);
 
     lv_obj_t *value = lv_label_create(card);
     lv_label_set_text(value, "");
     lv_obj_set_style_text_font(value, &lv_font_montserrat_24, 0);
-    lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 26);
 
     *value_out = value;
 }

@@ -139,6 +139,16 @@ bool bambuddy_api_has_active_job();
 // Wartet der Drucker darauf, dass die Druckplatte als frei gemeldet wird?
 bool bambuddy_api_awaiting_plate_clear();
 
+// Spricht gerade etwas gegen einen Druckstart? Liefert den Grund im
+// Klartext, sonst "".
+//
+// Bambuddy lehnt einen Start in diesen Zustaenden ohnehin ab. Ohne
+// vorherige Pruefung sieht der Benutzer aber erst die Rueckfrage "Platte
+// frei?", bestaetigt sie — und bekommt dann eine Fehlermeldung. Schlimmer:
+// Bei "Platte frei" wird vorher clear-plate geschickt, was den Drucker in
+// einen Zustand bringt, den niemand wollte.
+const char *bambuddy_api_start_blocked_reason();
+
 // millis() des letzten Task-Durchlaufs. Bleibt der Wert stehen, haengt oder
 // starb der Hintergrund-Task — dann darf die UI nicht das WLAN beschuldigen.
 uint32_t bambuddy_api_heartbeat();

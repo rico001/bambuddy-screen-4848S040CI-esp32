@@ -6,6 +6,7 @@
 #include "bambuddy_api.h"
 #include "bambuddy_archive.h"
 #include "bambuddy_cover.h"
+#include "settings_screen.h"
 #include "ui_layout.h"
 #include "ui_dialog.h"
 #include "ui_image_view.h"
@@ -96,6 +97,26 @@ static void start_cb(lv_event_t *e)
 {
     const int index = (int)(intptr_t)lv_event_get_user_data(e);
     if (index < 0 || index >= shown_count) return;
+
+    // Ist der Drucker beschaeftigt, gar nicht erst nach der Druckplatte
+    // fragen. Wer dort "Platte frei" bestaetigt, schickt clear-plate an
+    // einen laufenden Druck — und im schlimmsten Fall faehrt der Kopf in
+    // ein Werkstueck, das noch auf der Platte steht.
+    //
+    // Abschaltbar, weil die Sperre auch im Weg stehen kann: Bambuddy meldet
+    // einen Zustand womoeglich noch, waehrend der Drucker laengst fertig
+    // ist. Dann soll man nicht auf den naechsten Abruf warten muessen.
+    const char *blocked =
+        settings_start_guard() ? bambuddy_api_start_blocked_reason() : "";
+    if (blocked[0]) {
+        char warning[220];
+        snprintf(warning, sizeof(warning),
+                 "%s\n\n%s\nEin Start ist erst moeglich, wenn der Drucker fertig "
+                 "und die Platte frei ist.",
+                 shown[index].name, blocked);
+        ui_info("Start derzeit nicht moeglich", warning, "Verstanden");
+        return;
+    }
 
     char text[160];
     snprintf(text, sizeof(text),
@@ -329,20 +350,23 @@ void archive_screen_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(empty_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(empty_lbl, LV_ALIGN_CENTER, 0, -20);
 
+    // Nur Pfeile statt "Zurueck"/"Weiter": Die Richtung sagt das Symbol
+    // schon, und quadratische Knoepfe treffen sich mit dem Daumen besser als
+    // breite flache.
     prev_btn = lv_button_create(parent);
-    lv_obj_set_size(prev_btn, 84, 38);
+    lv_obj_set_size(prev_btn, 48, 38);
     lv_obj_align(prev_btn, LV_ALIGN_BOTTOM_LEFT, PAD, -30);
     lv_obj_add_event_cb(prev_btn, prev_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t *prev_lbl = lv_label_create(prev_btn);
-    lv_label_set_text(prev_lbl, LV_SYMBOL_LEFT " Zurueck");
+    lv_label_set_text(prev_lbl, LV_SYMBOL_LEFT);
     lv_obj_center(prev_lbl);
 
     next_btn = lv_button_create(parent);
-    lv_obj_set_size(next_btn, 84, 38);
+    lv_obj_set_size(next_btn, 48, 38);
     lv_obj_align(next_btn, LV_ALIGN_BOTTOM_RIGHT, -PAD, -30);
     lv_obj_add_event_cb(next_btn, next_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_t *next_lbl = lv_label_create(next_btn);
-    lv_label_set_text(next_lbl, "Weiter " LV_SYMBOL_RIGHT);
+    lv_label_set_text(next_lbl, LV_SYMBOL_RIGHT);
     lv_obj_center(next_lbl);
 
     page_lbl = lv_label_create(parent);

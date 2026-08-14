@@ -6,6 +6,7 @@
 #include "bambuddy_api.h"
 #include "bambuddy_cover.h"
 #include "bambuddy_queue.h"
+#include "settings_screen.h"
 #include "ui_layout.h"
 #include "ui_dialog.h"
 #include "ui_image_view.h"
@@ -83,6 +84,26 @@ static void start_cb(lv_event_t *e)
 {
     const int index = (int)(intptr_t)lv_event_get_user_data(e);
     if (index < 0 || index >= shown_count) return;
+
+    // Ist der Drucker beschaeftigt, gar nicht erst nach der Druckplatte
+    // fragen. Wer dort "Platte frei" bestaetigt, schickt clear-plate an
+    // einen laufenden Druck — und im schlimmsten Fall faehrt der Kopf in
+    // ein Werkstueck, das noch auf der Platte steht.
+    //
+    // Abschaltbar ueber die Einstellungen: Die Sperre kann auch im Weg
+    // stehen, wenn Bambuddy einen Zustand noch meldet, den der Drucker
+    // laengst hinter sich hat.
+    const char *blocked =
+        settings_start_guard() ? bambuddy_api_start_blocked_reason() : "";
+    if (blocked[0]) {
+        char warning[220];
+        snprintf(warning, sizeof(warning),
+                 "%s\n\n%s\nEin Start ist erst moeglich, wenn der Drucker fertig "
+                 "und die Platte frei ist.",
+                 shown[index].name, blocked);
+        ui_info("Start derzeit nicht moeglich", warning, "Verstanden");
+        return;
+    }
 
     char text[160];
     snprintf(text, sizeof(text),

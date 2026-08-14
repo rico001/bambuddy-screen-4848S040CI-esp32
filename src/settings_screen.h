@@ -26,6 +26,11 @@ uint32_t settings_poll_interval_idle_ms();
 // TLS-Zertifikat der Bambuddy-Instanz pruefen? (Standard: ja)
 bool settings_tls_verify();
 
+// Soll ein Druckstart abgelehnt werden, solange der Drucker beschaeftigt
+// ist? Aus heisst: Warteschlange und Archiv fragen wie frueher nur nach der
+// Druckplatte und schicken den Start ab.
+bool settings_start_guard();
+
 // POSIX-Zeitzonenstring, z.B. "CET-1CEST,M3.5.0,M10.5.0/3"
 const char *settings_timezone();
 
