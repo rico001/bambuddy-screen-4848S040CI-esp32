@@ -21,7 +21,6 @@ static constexpr int ROW_H = 8 + TITLE_H + 4 + META_H + 8;
 
 static lv_obj_t *list_cont = nullptr;
 static lv_obj_t *empty_lbl = nullptr;
-static lv_obj_t *hint_lbl = nullptr;
 static lv_timer_t *ui_timer = nullptr;
 
 // Schwere in Farbe: Man soll die eine Zeile finden, die zaehlt, ohne alle
@@ -193,11 +192,13 @@ void hms_screen_create(lv_obj_t *parent)
     lv_obj_set_style_text_color(empty_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(empty_lbl, LV_ALIGN_CENTER, 0, -20);
 
-    hint_lbl = lv_label_create(parent);
-    lv_label_set_text(hint_lbl, "Codes nachschlagen: wiki.bambulab.com/en/hms/home");
-    lv_obj_set_style_text_font(hint_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(hint_lbl, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(hint_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 2, -12);
+    // Kein Merker noetig: Der Hinweis wird nie wieder angefasst und
+    // verschwindet mit der Ansicht.
+    lv_obj_t *hint = lv_label_create(parent);
+    lv_label_set_text(hint, "Fehlercodes: wiki.bambulab.com/en/hms/home");
+    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, PAD + 2, -12);
 
     // Oben rechts, auf Hoehe des Zurueck-Knopfes. Unten waere er neben dem
     // Wiki-Hinweis gelandet, wo man ihn beim Scrollen versehentlich trifft.
@@ -231,5 +232,4 @@ void hms_screen_destroy()
     }
     list_cont = nullptr;
     empty_lbl = nullptr;
-    hint_lbl = nullptr;
 }
