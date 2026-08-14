@@ -270,13 +270,20 @@ static bool was_active(const char *code)
     return false;
 }
 
-// "Druck fertig: Wuerfel" bzw. "Druck fertig", wenn kein Name vorliegt.
-// Stand dreimal fast gleich da — dreimal die Gelegenheit, den Doppelpunkt
-// beim naechsten Mal anders zu setzen.
+// "Druck fertig" mit dem Namen in der zweiten Zeile, bzw. nur die Aussage,
+// wenn kein Name vorliegt.
+//
+// Der Umbruch ist ausdruecklich gesetzt, nicht dem Zufall der Textbreite
+// ueberlassen: Was passiert ist, steht dann immer oben und der Dateiname
+// darunter — untereinander liest sich eine Liste solcher Zeilen schneller
+// als hintereinander. Die Ansicht raeumt dafuer zwei Zeilen ein.
+//
+// Stand dreimal fast gleich da; dreimal die Gelegenheit, es beim naechsten
+// Mal anders zu setzen.
 static void job_text(const char *prefix, const char *job, char *out, size_t out_len)
 {
     if (job && job[0]) {
-        snprintf(out, out_len, "%s: %s", prefix, job);
+        snprintf(out, out_len, "%s:\n%s", prefix, job);
     } else {
         snprintf(out, out_len, "%s", prefix);
     }
