@@ -92,13 +92,27 @@ struct blob_header_t {
 static Preferences prefs;
 static bool loaded = false;
 static bool backfilled = false;
+static bool dirty = false;
+static uint32_t dirty_since_ms = 0;
+
+// So lange nach der letzten Aenderung wird gewartet, bevor geschrieben wird.
+// Lang genug, dass der Neuaufbau der Kachel vorbei ist; kurz genug, dass ein
+// Eintrag nicht wirklich verlorengeht.
+static constexpr uint32_t FLUSH_DELAY_MS = 3000;
 
 // Ein Puffer fuer Lesen und Schreiben. Zwei eigene waeren zusammen ueber
 // drei Kilobyte internes RAM, dauerhaft belegt fuer etwas, das ein paar Mal
 // am Tag gebraucht wird.
 static uint8_t nvs_buffer[sizeof(blob_header_t) + sizeof(entries)];
 
-static void save_locked()
+// Nur vormerken. Geschrieben wird spaeter in bambuddy_hms_flush().
+static void mark_dirty()
+{
+    dirty = true;
+    dirty_since_ms = millis();
+}
+
+static void write_locked()
 {
     blob_header_t header = {BLOB_VERSION, (uint16_t)entry_count};
 
@@ -189,7 +203,7 @@ static void maybe_backfill()
         }
 
         if (fixed > 0) {
-            save_locked();
+            mark_dirty();
             fresh = true;
             Serial.printf("[HMS] %d Zeitstempel nachgetragen\n", fixed);
         }
@@ -261,7 +275,7 @@ static void add_entry(const char *code, const char *text, int32_t severity)
     e.when = settings_time_synced() ? time(nullptr) : 0;
     e.restored = false;
 
-    save_locked();
+    mark_dirty();
 
     Serial.printf("[HMS] %s %s (Schwere %d)\n", e.code, e.text, (int)severity);
 }
@@ -450,6 +464,19 @@ const char *bambuddy_hms_severity_text(int32_t severity)
     return text;
 }
 
+void bambuddy_hms_flush()
+{
+    if (!dirty || !log_mutex) return;
+    if (millis() - dirty_since_ms < FLUSH_DELAY_MS) return;
+
+    xSemaphoreTake(log_mutex, portMAX_DELAY);
+    if (dirty) {
+        dirty = false;
+        write_locked();
+    }
+    xSemaphoreGive(log_mutex);
+}
+
 void bambuddy_hms_clear()
 {
     ensure_ready();
@@ -462,6 +489,9 @@ void bambuddy_hms_clear()
     prefs.remove(NVS_KEY);
     prefs.end();
 
+    // Nichts mehr zu schreiben — sonst legte der naechste Flush das gerade
+    // Geloeschte wieder an.
+    dirty = false;
     fresh = true;
     xSemaphoreGive(log_mutex);
 

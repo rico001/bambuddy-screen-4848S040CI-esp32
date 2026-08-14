@@ -19,6 +19,7 @@
 #include "bambuddy_mqtt.h"
 #include "bambuddy_queue.h"
 #include "bambuddy_filament.h"
+#include "bambuddy_hms.h"
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "bambuddy_version.h"
@@ -477,6 +478,12 @@ static void api_task(void *)
                 fetch_ams_status();
             }
         }
+
+        // Ausstehende Protokolleintraege ins NVS. Hier, im Netzwerk-Task,
+        // und mit Verzoegerung: Der Flash-Zugriff haelt kurz den Cache an,
+        // und das faellt als Ruckeln auf, wenn es mit dem Neuaufbau der
+        // Kachel zusammenfaellt.
+        bambuddy_hms_flush();
 
         // Fassung der Instanz — bewusst ausserhalb der Konfigurationspruefung
         // oben: Der Ersatzweg /updates/version braucht keinen API-Key, und
