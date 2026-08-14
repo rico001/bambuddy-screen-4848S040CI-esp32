@@ -207,6 +207,18 @@ static void ensure_ready()
     xSemaphoreGive(log_mutex);
 }
 
+// Zustaende, in denen ein Auftrag auf dem Drucker liegt. PREPARE deckt das
+// Vorbereiten ab — Bett heizen, kalibrieren —, PAUSE die Unterbrechung.
+static bool is_job_state(const char *state)
+{
+    static const char *const active[] = {"RUNNING", "printing", "PREPARE",
+                                         "preparing", "PAUSE", "paused"};
+    for (const char *s : active) {
+        if (strcasecmp(state, s) == 0) return true;
+    }
+    return false;
+}
+
 static bool was_active(const char *code)
 {
     for (int i = 0; i < previous_count; i++) {
@@ -280,6 +292,7 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     // im Poll-Takt zehnmal im Log.
     static char previous_state[16] = "";
     static bool have_previous = false;
+    static bool was_job = false;
 
     if (have_previous && strcasecmp(previous_state, state) == 0) return;
 
@@ -294,14 +307,37 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     // laengst vorbei ist: FAILED bleibt am Drucker stehen, bis der naechste
     // Druck laeuft — mit der Uhrzeit des Einschaltens statt der des
     // Ereignisses. Das Log soll sagen, was passiert ist, waehrend es lief.
-    if (first) return;
+    //
+    // Ebenso fuer den Auftragszustand: Ein beim Einschalten laufender Druck
+    // ist kein neu gestarteter.
+    if (first) {
+        was_job = is_job_state(state);
+        return;
+    }
 
     const bool failed = strcasecmp(state, "FAILED") == 0;
     const bool finished = strcasecmp(state, "FINISH") == 0;
-    if (!failed && !finished) return;
+
+    // Beginn eines Auftrags: Uebergang von "kein Auftrag" zu einem der
+    // Auftragszustaende.
+    //
+    // Nicht schlicht auf RUNNING pruefen — ein Druck laeuft ueber PREPARE an
+    // und kaeme sonst erst nach dem Heizen ins Protokoll. Und ein Fortsetzen
+    // nach einer Pause geht ebenfalls nach RUNNING; das ist kein neuer Druck
+    // und soll auch nicht so dastehen.
+    const bool started = is_job_state(state) && !was_job;
+    was_job = is_job_state(state);
+
+    if (!failed && !finished && !started) return;
 
     char text[64];
-    if (failed) {
+    if (started) {
+        if (job && job[0]) {
+            snprintf(text, sizeof(text), "Druck gestartet: %s", job);
+        } else {
+            snprintf(text, sizeof(text), "Druck gestartet");
+        }
+    } else if (failed) {
         if (job && job[0]) {
             snprintf(text, sizeof(text), "Druck gestoppt oder fehlgeschlagen: %s", job);
         } else {
@@ -315,9 +351,11 @@ void bambuddy_hms_report_state(const char *state, const char *job)
 
     ensure_ready();
     xSemaphoreTake(log_mutex, portMAX_DELAY);
-    // Schwere 2 beim Abbruch: kein Hardwaredefekt, aber nichts, was man im
-    // Log uebersehen moechte.
-    add_entry("", text, failed ? 2 : BB_HMS_SEVERITY_OK);
+
+    // Abbruch als Fehler — kein Hardwaredefekt, aber nichts, was man im
+    // Protokoll uebersehen moechte. Fertiger Druck gruen, Start als blosser
+    // Hinweis.
+    add_entry("", text, failed ? 2 : (started ? 4 : BB_HMS_SEVERITY_OK));
     fresh = true;
     xSemaphoreGive(log_mutex);
 }
