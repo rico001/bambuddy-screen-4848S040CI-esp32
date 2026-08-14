@@ -69,11 +69,6 @@ int bambuddy_hms_count();
 // index 0 ist der juengste Eintrag.
 bool bambuddy_hms_get(int index, bambuddy_hms_entry_t *out);
 
-// Klartext zu einem Code, soweit bekannt — sonst "". Die vollstaendige
-// Tabelle hat ueber 850 Eintraege und gehoert nicht auf dieses Geraet; hier
-// stehen die, die an einem P1S mit AMS tatsaechlich vorkommen.
-const char *bambuddy_hms_text(const char *code);
-
 // "schwer", "ernst", "normal", "Hinweis" — sonst die blosse Zahl.
 const char *bambuddy_hms_severity_text(int32_t severity);
 

@@ -58,6 +58,8 @@ static const hms_text_t HMS_TEXTS[] = {
 };
 static constexpr int HMS_TEXT_COUNT = sizeof(HMS_TEXTS) / sizeof(HMS_TEXTS[0]);
 
+static const char *hms_text(const char *code);
+
 // Nicht "log" nennen: math.h belegt den Namen mit dem Logarithmus.
 static bambuddy_hms_entry_t entries[BB_HMS_LOG_MAX];
 static int entry_count = 0;
@@ -227,6 +229,18 @@ static bool was_active(const char *code)
     return false;
 }
 
+// "Druck fertig: Wuerfel" bzw. "Druck fertig", wenn kein Name vorliegt.
+// Stand dreimal fast gleich da — dreimal die Gelegenheit, den Doppelpunkt
+// beim naechsten Mal anders zu setzen.
+static void job_text(const char *prefix, const char *job, char *out, size_t out_len)
+{
+    if (job && job[0]) {
+        snprintf(out, out_len, "%s: %s", prefix, job);
+    } else {
+        snprintf(out, out_len, "%s", prefix);
+    }
+}
+
 static void add_entry(const char *code, const char *text, int32_t severity)
 {
     // Neuestes vorn: Beim Anzeigen will man den letzten Fehler zuerst sehen,
@@ -269,7 +283,7 @@ void bambuddy_hms_report(const char codes[][24], const int32_t *severities, int 
     for (int i = 0; i < count; i++) {
         if (!codes[i][0] || was_active(codes[i])) continue;
 
-        add_entry(codes[i], bambuddy_hms_text(codes[i]),
+        add_entry(codes[i], hms_text(codes[i]),
                   severities ? severities[i] : 0);
         fresh = true;
     }
@@ -287,14 +301,21 @@ void bambuddy_hms_report_state(const char *state, const char *job)
 {
     if (!state || !state[0]) return;
 
-    // Flankengesteuert wie bei den Fehlercodes: FAILED bleibt stehen, bis
-    // der naechste Druck laeuft. Ohne diesen Vergleich stuende der Abbruch
-    // im Poll-Takt zehnmal im Log.
+    ensure_ready();
+    xSemaphoreTake(log_mutex, portMAX_DELAY);
+
+    // Die Merker liegen mit unter dem Mutex. Gelesen wird dieser Weg zwar
+    // immer nur aus einem Task — Bambuddy liefert entweder per MQTT oder per
+    // HTTP, nie beides —, aber beim Umschalten der Quelle im laufenden
+    // Betrieb koennen sich beide fuer einen Moment ueberschneiden.
     static char previous_state[16] = "";
     static bool have_previous = false;
     static bool was_job = false;
 
-    if (have_previous && strcasecmp(previous_state, state) == 0) return;
+    if (have_previous && strcasecmp(previous_state, state) == 0) {
+        xSemaphoreGive(log_mutex);
+        return;
+    }
 
     const bool first = !have_previous;
     have_previous = true;
@@ -306,12 +327,12 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     // Sonst schriebe jeder Neustart des Displays einen Abbruch ins Log, der
     // laengst vorbei ist: FAILED bleibt am Drucker stehen, bis der naechste
     // Druck laeuft — mit der Uhrzeit des Einschaltens statt der des
-    // Ereignisses. Das Log soll sagen, was passiert ist, waehrend es lief.
-    //
-    // Ebenso fuer den Auftragszustand: Ein beim Einschalten laufender Druck
-    // ist kein neu gestarteter.
+    // Ereignisses. Das Protokoll soll sagen, was passiert ist, waehrend es
+    // lief. Ebenso beim Auftragszustand: Ein beim Einschalten laufender
+    // Druck ist kein neu gestarteter.
     if (first) {
         was_job = is_job_state(state);
+        xSemaphoreGive(log_mutex);
         return;
     }
 
@@ -328,29 +349,19 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     const bool started = is_job_state(state) && !was_job;
     was_job = is_job_state(state);
 
-    if (!failed && !finished && !started) return;
+    if (!failed && !finished && !started) {
+        xSemaphoreGive(log_mutex);
+        return;
+    }
 
     char text[64];
     if (started) {
-        if (job && job[0]) {
-            snprintf(text, sizeof(text), "Druck gestartet: %s", job);
-        } else {
-            snprintf(text, sizeof(text), "Druck gestartet");
-        }
+        job_text("Druck gestartet", job, text, sizeof(text));
     } else if (failed) {
-        if (job && job[0]) {
-            snprintf(text, sizeof(text), "Druck gestoppt oder fehlgeschlagen: %s", job);
-        } else {
-            snprintf(text, sizeof(text), "Druck gestoppt oder fehlgeschlagen");
-        }
-    } else if (job && job[0]) {
-        snprintf(text, sizeof(text), "Druck fertig: %s", job);
+        job_text("Druck gestoppt oder fehlgeschlagen", job, text, sizeof(text));
     } else {
-        snprintf(text, sizeof(text), "Druck fertig");
+        job_text("Druck fertig", job, text, sizeof(text));
     }
-
-    ensure_ready();
-    xSemaphoreTake(log_mutex, portMAX_DELAY);
 
     // Abbruch als Fehler — kein Hardwaredefekt, aber nichts, was man im
     // Protokoll uebersehen moechte. Fertiger Druck gruen, Start als blosser
@@ -363,11 +374,7 @@ void bambuddy_hms_report_state(const char *state, const char *job)
 void bambuddy_hms_report_boot(const char *reason, bool unexpected)
 {
     char text[64];
-    if (reason && reason[0]) {
-        snprintf(text, sizeof(text), "Display gestartet: %s", reason);
-    } else {
-        snprintf(text, sizeof(text), "Display gestartet");
-    }
+    job_text("Display gestartet", reason, text, sizeof(text));
 
     ensure_ready();
     xSemaphoreTake(log_mutex, portMAX_DELAY);
@@ -407,7 +414,7 @@ static void strip_underscores(const char *src, char *out, size_t out_len)
     out[n] = '\0';
 }
 
-const char *bambuddy_hms_text(const char *code)
+static const char *hms_text(const char *code)
 {
     if (!code || !code[0]) return "";
 
