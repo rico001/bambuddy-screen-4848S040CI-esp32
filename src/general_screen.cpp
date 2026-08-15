@@ -2,12 +2,13 @@
 
 #include <Arduino.h>
 
+#include "bambuddy_hms.h"
 #include "bambuddy_version.h"
 #include "jog_screen.h"
 #include "settings_screen.h"
 #include "smart_plugs_screen.h"
 #include "ui_dialog.h"
-#include "ui_nav.h"
+#include "ui_fullscreen.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "wifi_screen.h"
@@ -16,150 +17,22 @@ static constexpr int PAD = 12;
 static constexpr uint32_t COL_WIFI = 0x00897B;
 static constexpr uint32_t COL_SETTINGS = COL_NEUTRAL; // Kachel "Einstellungen"
 
-enum view_t {
-    VIEW_HOME,
-    VIEW_WIFI,
-    VIEW_SETTINGS,
-    VIEW_SMART_PLUGS,
-    VIEW_JOG,
-};
-
 static lv_obj_t *root = nullptr;
-static view_t active_view = VIEW_HOME;
-static bool transition_pending = false;
-static bool screen_visible = false;
 
-// Wurde die Ansicht per Direktsprung vom Statusscreen geoeffnet? Dann fuehrt
-// "Zurueck" auch dorthin zurueck und nicht in die Kachelübersicht — sonst
-// steht man nach dem Schalten einer Steckdose an einer Stelle, die man gar
-// nicht aufgesucht hat.
-static bool came_from_status = false;
-
-static void build_home();
-
-// Gibt die Objekte der offenen Unteransicht frei. Muss vor jedem
-// lv_obj_clean(root) laufen, egal ob zurueck oder quer gesprungen wird.
-static void destroy_active_view()
-{
-    if (active_view == VIEW_WIFI) {
-        wifi_screen_destroy();
-    } else if (active_view == VIEW_SETTINGS) {
-        settings_screen_destroy();
-    } else if (active_view == VIEW_SMART_PLUGS) {
-        smart_plugs_screen_destroy();
-    } else if (active_view == VIEW_JOG) {
-        jog_screen_destroy();
-    }
-}
-
-static void close_active_view()
-{
-    if (!root || active_view == VIEW_HOME) return;
-
-    destroy_active_view();
-
-    lv_obj_clean(root);
-    active_view = VIEW_HOME;
-    build_home();
-
-    if (came_from_status) {
-        came_from_status = false;
-        ui_nav_status();
-    }
-}
-
-static void close_async(void *)
-{
-    transition_pending = false;
-    close_active_view();
-}
-
-static void back_cb(lv_event_t *)
-{
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(close_async, nullptr);
-}
-
-static void add_back_button()
-{
-    lv_obj_t *btn = lv_button_create(root);
-    lv_obj_set_size(btn, 40, 40);
-    lv_obj_align(btn, LV_ALIGN_TOP_LEFT, PAD, 6);
-    lv_obj_set_style_radius(btn, 20, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_SETTINGS), 0);
-    lv_obj_add_event_cb(btn, back_cb, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, LV_SYMBOL_LEFT);
-    lv_obj_center(label);
-}
-
-static void open_wifi_async(void *)
-{
-    transition_pending = false;
-    if (!screen_visible) return;
-    lv_obj_clean(root);
-    active_view = VIEW_WIFI;
-    wifi_screen_create(root);
-    add_back_button();
-}
-
+// Die Unteransichten liegen als Vollbild ueber allem (siehe ui_fullscreen.h).
+// Diese Kachel muss deshalb nichts mehr verwalten: kein Umbauen des eigenen
+// Inhalts, keine Merker, wo man herkam. Der Zurueck-Knopf blendet die
+// Ansicht aus, und darunter liegt genau die Kachel, von der man kam.
 static void open_wifi_cb(lv_event_t *)
 {
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(open_wifi_async, nullptr);
-}
-
-static void open_settings_async(void *)
-{
-    transition_pending = false;
-    if (!screen_visible) return;
-    lv_obj_clean(root);
-    active_view = VIEW_SETTINGS;
-    settings_screen_create(root);
-    add_back_button();
+    ui_fullscreen_open("System / WLAN", COL_WIFI, wifi_screen_create,
+                       wifi_screen_destroy);
 }
 
 static void open_settings_cb(lv_event_t *)
 {
-    if (transition_pending) return;
-    transition_pending = true;
-    lv_async_call(open_settings_async, nullptr);
-}
-
-// Smart Plugs und Jog-Steuerung haben hier keine Kachel mehr: Beide braucht
-// man vor dem Drucker, nicht in den Einstellungen, und erreichbar sind sie
-// ueber die Kopfzeile des Statusscreens. Sie wohnen aber weiterhin auf dieser
-// Kachel — sie brauchen den Platz einer ganzen Seite, den der Statusscreen
-// nicht hat. Aufgeschlagen werden sie ausschliesslich per Direktsprung.
-static void open_smart_plugs_async(void *)
-{
-    transition_pending = false;
-    if (!screen_visible || !root) return;
-
-    // War eine andere Unteransicht offen, muss sie ihre Objekte freigeben —
-    // sonst zeigen ihre Timer auf geloeschte Labels.
-    destroy_active_view();
-
-    lv_obj_clean(root);
-    active_view = VIEW_SMART_PLUGS;
-    smart_plugs_screen_create(root);
-    add_back_button();
-}
-
-static void open_jog_async(void *)
-{
-    transition_pending = false;
-    if (!screen_visible || !root) return;
-
-    destroy_active_view();
-
-    lv_obj_clean(root);
-    active_view = VIEW_JOG;
-    jog_screen_create(root);
-    add_back_button();
+    ui_fullscreen_open("System / Settings", COL_SETTINGS, settings_screen_create,
+                       settings_screen_destroy);
 }
 
 // --- Versionsabgleich ----------------------------------------------------
@@ -260,7 +133,16 @@ static void add_version_badge()
 // mitten im Ereignis neu.
 static void restart_async(void *)
 {
-    delay(200);
+    // Ausstehende Protokolleintraege noch sichern. Der uebliche Weg wartet
+    // auf einen ruhigen Moment — den gibt es hier nicht mehr, und ein kurzer
+    // Streifen unmittelbar vor dem Neustart faellt niemandem auf.
+    bambuddy_hms_flush_now();
+
+    // 500 statt der frueheren 200 ms. Noetig waere es nicht — putBytes und
+    // end() schreiben synchron und kehren erst zurueck, wenn das NVS
+    // festgeschrieben ist. Aber ein Neustart ist nicht rueckgaengig zu
+    // machen, und drei Zehntelsekunden mehr merkt niemand.
+    delay(500);
     ESP.restart();
 }
 
@@ -271,7 +153,7 @@ static void restart_confirmed(void *)
 
 static void restart_cb(lv_event_t *)
 {
-    if (transition_pending || ui_confirm_is_open()) return;
+    if (ui_confirm_is_open()) return;
     ui_confirm("Bambuddy-Display neu starten?", "Das Display startet sofort neu.",
                "Abbrechen", "Neustart", COL_ERR, restart_confirmed, nullptr);
 }
@@ -352,8 +234,6 @@ static void build_home()
 void general_screen_create(lv_obj_t *parent)
 {
     root = parent;
-    active_view = VIEW_HOME;
-    screen_visible = false;
     build_home();
 
     if (!version_timer) version_timer = lv_timer_create(version_timer_cb, 1000, nullptr);
@@ -361,43 +241,23 @@ void general_screen_create(lv_obj_t *parent)
 
 void general_screen_show_smart_plugs()
 {
-    if (transition_pending) return;
-    transition_pending = true;
-
-    // Die Kachel wurde gerade aufgeschlagen; das Sichtbar-Ereignis des
-    // Tileviews kann noch ausstehen, deshalb hier selbst setzen.
-    screen_visible = true;
-    came_from_status = true;
-    lv_async_call(open_smart_plugs_async, nullptr);
+    ui_fullscreen_open("System / Smart Plugs", COL_PLUG, smart_plugs_screen_create,
+                       smart_plugs_screen_destroy);
 }
 
 void general_screen_show_jog()
 {
-    if (transition_pending) return;
-    transition_pending = true;
-
-    screen_visible = true;
-    came_from_status = true;
-    lv_async_call(open_jog_async, nullptr);
+    ui_fullscreen_open("System / Steuerung", COL_JOG, jog_screen_create,
+                       jog_screen_destroy);
 }
 
 void general_screen_set_visible(bool visible)
 {
-    // Wischt man selbst weg, ist der Zusammenhang zum Statusscreen weg —
-    // ein spaeteres "Zurueck" soll dann nicht dorthin springen.
-    if (!visible) came_from_status = false;
-
-    screen_visible = visible;
-
     // Beim Aufschlagen der Kachel neu abfragen — nach einem Update der
     // Instanz soll das Ausrufezeichen nicht stundenlang die alte Lage zeigen.
     if (visible) {
         bambuddy_version_request_refresh();
         refresh_version_badge();
     }
-
-    if (!visible && active_view != VIEW_HOME && !transition_pending) {
-        transition_pending = true;
-        lv_async_call(close_async, nullptr);
-    }
 }
+

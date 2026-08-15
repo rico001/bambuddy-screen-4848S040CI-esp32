@@ -26,6 +26,37 @@ uint32_t settings_poll_interval_idle_ms();
 // TLS-Zertifikat der Bambuddy-Instanz pruefen? (Standard: ja)
 bool settings_tls_verify();
 
+// Soll ein Druckstart abgelehnt werden, solange der Drucker beschaeftigt
+// ist? Aus heisst: Warteschlange und Archiv fragen wie frueher nur nach der
+// Druckplatte und schicken den Start ab.
+bool settings_start_guard();
+
+// Was soll ins Meldungsprotokoll? Einzeln schaltbar, weil die Ansprueche
+// auseinandergehen: Wer nur wissen will, was schiefging, braucht keine
+// Startmeldungen.
+bool settings_log_print_start();
+bool settings_log_print_done();
+bool settings_log_errors();
+bool settings_log_boot();
+
+// Wird ueberhaupt irgendetwas protokolliert? Ist alles aus, blendet der
+// Status-Screen seinen Knopf aus — ein Knopf, der zu einer garantiert leeren
+// Liste fuehrt, ist nur im Weg.
+bool settings_log_any();
+
+// Soll das Protokoll den Neustart ueberleben?
+//
+// Aus heisst: keine Flash-Zugriffe mehr. Auf diesem Board teilen sich Flash
+// und PSRAM einen Controller — waehrend eines Schreibvorgangs bekommt das
+// Panel keine Pixel aus dem Bildpuffer und zeigt kurz einen Streifen. Wem
+// das Bild wichtiger ist als der Verlauf ueber Neustarts hinweg, schaltet
+// hier ab.
+bool settings_log_persist();
+
+// Wie lange wurde der Bildschirm nicht mehr beruehrt? Das Protokoll wartet
+// damit auf einen ruhigen Moment fuer seinen Flash-Zugriff.
+uint32_t settings_display_idle_ms();
+
 // POSIX-Zeitzonenstring, z.B. "CET-1CEST,M3.5.0,M10.5.0/3"
 const char *settings_timezone();
 

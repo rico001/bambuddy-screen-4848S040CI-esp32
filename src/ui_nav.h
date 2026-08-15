@@ -6,12 +6,16 @@
 // oder das Tileview kennen muessen. Deshalb liegt hier die schmale
 // Schnittstelle dafuer, umgesetzt in main.cpp.
 
+// Direkt auf eine Kachel springen (0 = AMS ... 4 = System). Fuer die
+// Navigationsleiste am unteren Rand.
+void ui_nav_tile(int index);
+
 // Wechselt auf die Systemkachel und oeffnet dort direkt die Smart Plugs.
 void ui_nav_smart_plugs();
 
 // Dasselbe fuer die Jog-Steuerung.
 void ui_nav_jog();
 
-// Zurueck auf die Statuskachel — fuer den Rueckweg aus einer Ansicht, die
-// von dort aus aufgerufen wurde.
-void ui_nav_status();
+// Protokoll der Druckermeldungen. Sitzt bewusst nicht mehr auf der
+// Systemkachel: Was der Drucker gemeldet hat, sucht man beim Drucker.
+void ui_nav_messages();

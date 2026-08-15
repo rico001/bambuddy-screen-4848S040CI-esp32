@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <string.h>
+#include <time.h>
 
 #include <WiFi.h>
 
@@ -25,18 +26,22 @@
 static constexpr int PAD = 12;
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD; // 456
 
-// Senkrechtes Budget (CONTENT_H = 454, siehe ui_layout.h):
+// Senkrechtes Budget (CONTENT_H = 414, siehe ui_layout.h):
 //   Kopfzeile        0 ..  46
 //   Auftragskarte   46 .. 258
-//   Temperaturen   266 .. 348
-//   Steuerung      356 .. 408
-//   Fusszeile      unten
+//   Temperaturen   266 .. 326
+//   Steuerung      334 .. 386
+//   Fusszeile      394 .. 408 (unten ausgerichtet)
+//
+// Die Temperaturkarten sind flacher als frueher: Seit die Navigationsleiste
+// unten 40 Pixel belegt, endet die Kachel bei 414 statt 454, und die
+// Fusszeile lag sonst ueber den Steuerknoepfen.
 static constexpr int JOB_Y = 46;
 static constexpr int JOB_H = 212;
 static constexpr int TEMP_Y = 266;
-static constexpr int TEMP_H = 82;
+static constexpr int TEMP_H = 60;
 static constexpr int TEMP_W = (CONTENT_W - 12) / 2;
-static constexpr int CTRL_Y = 356;
+static constexpr int CTRL_Y = 334;
 static constexpr int CTRL_H = 52;
 static constexpr int CTRL_GAP = 8;
 static constexpr int CTRL_W = (CONTENT_W - 4 * CTRL_GAP) / 5;
@@ -72,6 +77,7 @@ static lv_obj_t *light_btn_lbl;
 static lv_obj_t *speed_btn;
 static lv_obj_t *speed_btn_lbl;
 
+static lv_obj_t *log_btn;
 static lv_obj_t *message_lbl;
 // Fehlertext aus update_link(). Die Fusszeile entscheidet danach, was
 // tatsaechlich zu sehen ist — Fehler haben Vorrang vor allem anderen.
@@ -135,17 +141,64 @@ static const char *state_text(const char *state, uint32_t *color_out)
     return state[0] ? state : "Unbekannt";
 }
 
+// Restzeit und, wenn die Uhr steht, die voraussichtliche Fertig-Uhrzeit.
+//
+// "noch 5 h 12 min" muss man im Kopf auf die Uhr addieren; bei einem langen
+// Druck ist genau das die Frage, die man hat. Der Tag steht mit dabei,
+// sobald das Ende nicht mehr auf den heutigen faellt — "fertig 07:20" waere
+// sonst zwoelf Stunden zu frueh verstanden.
 static void format_remaining(int32_t minutes, char *out, size_t out_len)
 {
     if (minutes <= 0) {
-        strncpy(out, "", out_len);
+        if (out_len) out[0] = '\0';
         return;
     }
+
+    char span[32];
     if (minutes < 60) {
-        snprintf(out, out_len, "noch %d min", (int)minutes);
+        snprintf(span, sizeof(span), "noch %d min", (int)minutes);
     } else {
-        snprintf(out, out_len, "noch %d h %02d min", (int)(minutes / 60), (int)(minutes % 60));
+        snprintf(span, sizeof(span), "noch %d h %02d min", (int)(minutes / 60),
+                 (int)(minutes % 60));
     }
+
+    // Ohne NTP stuende dort eine Uhrzeit aus dem Startwert des Chips.
+    if (!settings_time_synced()) {
+        strncpy(out, span, out_len - 1);
+        out[out_len - 1] = '\0';
+        return;
+    }
+
+    const time_t now = time(nullptr);
+    const time_t done = now + (time_t)minutes * 60;
+
+    struct tm tm_done;
+    struct tm tm_now;
+    localtime_r(&done, &tm_done);
+    localtime_r(&now, &tm_now);
+
+    // Nach Kalendertagen unterscheiden, nicht nach 24 Stunden — siehe
+    // Fusszeile.
+    struct tm midnight = tm_now;
+    midnight.tm_hour = 0;
+    midnight.tm_min = 0;
+    midnight.tm_sec = 0;
+    midnight.tm_isdst = -1;
+    const time_t today_start = mktime(&midnight);
+
+    char day[12] = "";
+    if (done >= today_start + 2 * 86400) {
+        // Modulo, damit der Compiler die Laenge belegen kann: Er kennt die
+        // Wertebereiche von struct tm nicht und rechnet sonst mit elf
+        // Stellen je Zahl.
+        snprintf(day, sizeof(day), "%d.%d. ", tm_done.tm_mday % 100,
+                 (tm_done.tm_mon + 1) % 100);
+    } else if (done >= today_start + 86400) {
+        snprintf(day, sizeof(day), "morgen ");
+    }
+
+    snprintf(out, out_len, "%s - fertig %s%02d:%02d", span, day, tm_done.tm_hour,
+             tm_done.tm_min);
 }
 
 // Der Knopf traegt die aktuelle Stufe, angetippt oeffnet er die Auswahl.
@@ -335,7 +388,8 @@ static void update_status_fields()
     // den letzten Wert weiter — der zaehlt dann nicht mehr runter und waere
     // schlicht falsch.
     if (job_active) {
-        char buf[32];
+        // Reicht fuer "noch 12 h 34 min - fertig morgen 07:20".
+        char buf[64];
         format_remaining(status.remaining_min, buf, sizeof(buf));
         ui_set_text(remaining_lbl, buf);
     } else {
@@ -507,6 +561,11 @@ static void plugs_cb(lv_event_t *)
     ui_nav_smart_plugs();
 }
 
+static void messages_cb(lv_event_t *)
+{
+    ui_nav_messages();
+}
+
 static void jog_cb(lv_event_t *)
 {
     ui_nav_jog();
@@ -609,6 +668,24 @@ static void wake_on_state_change()
     if (state_changed || job_changed || plate_asked) settings_screen_wake();
 }
 
+// Ist im Protokoll alles abgeschaltet, fuehrt der Knopf zu einer garantiert
+// leeren Liste — dann weg damit. Die Badge rueckt in die Luecke nach, sonst
+// klafft rechts ein Loch, das nach einem Fehler aussieht.
+static void update_log_button()
+{
+    if (!log_btn || !badge) return;
+
+    const bool show = settings_log_any();
+    if (show == !lv_obj_has_flag(log_btn, LV_OBJ_FLAG_HIDDEN)) return;
+
+    if (show) {
+        lv_obj_remove_flag(log_btn, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(log_btn, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + (show ? 3 : 2) * (52 + 8)), 8);
+}
+
 static void ui_tick_cb(lv_timer_t *)
 {
     if (bambuddy_api_take(&status)) {
@@ -623,6 +700,7 @@ static void ui_tick_cb(lv_timer_t *)
     if (have_status) update_status_fields();
 
     update_link();
+    update_log_button();
     update_cover();
     update_controls();
     update_camera_overlay();
@@ -657,10 +735,61 @@ static void ui_tick_cb(lv_timer_t *)
     const uint32_t age_s = (millis() - status.updated_ms) / 1000;
     if (age_s < 5) {
         ui_set_text_fmt(message_lbl, "%s - gerade aktualisiert", source);
-    } else if (age_s < 120) {
+        return;
+    }
+    if (age_s < 120) {
         ui_set_text_fmt(message_lbl, "%s - vor %d s", source, (int)age_s);
-    } else {
+        return;
+    }
+    if (age_s < 3600) {
         ui_set_text_fmt(message_lbl, "%s - vor %d min", source, (int)(age_s / 60));
+        return;
+    }
+
+    // Ab einer Stunde ist die Zeitspanne keine Hilfe mehr: "vor 97 min" muss
+    // man erst zurueckrechnen. Die Uhrzeit steht direkt da.
+    //
+    // Nur mit gestellter Uhr — ohne NTP steht sie auf dem Startwert des
+    // Chips, und eine falsche Uhrzeit waere schlechter als eine grobe
+    // Spanne. Der Tag steht mit dabei, sonst waere "14:32" nicht einzuordnen.
+    if (!settings_time_synced()) {
+        ui_set_text_fmt(message_lbl, "%s - vor %d h", source, (int)(age_s / 3600));
+        return;
+    }
+
+    const time_t now = time(nullptr);
+    const time_t when = now - (time_t)age_s;
+
+    struct tm tm_when;
+    struct tm tm_now;
+    localtime_r(&when, &tm_when);
+    localtime_r(&now, &tm_now);
+
+    // Nach Kalendertag unterscheiden, nicht nach Stunden. "Weniger als 24
+    // Stunden her" heisst nicht "heute": Um ein Uhr nachts liegen zwanzig
+    // Stunden zurueck am Vortag, und "heute, 05:00 Uhr" waere schlicht
+    // falsch.
+    struct tm midnight = tm_now;
+    midnight.tm_hour = 0;
+    midnight.tm_min = 0;
+    midnight.tm_sec = 0;
+    midnight.tm_isdst = -1; // Sommerzeit von mktime bestimmen lassen
+    const time_t today_start = mktime(&midnight);
+
+    const char *day = "";
+    if (when >= today_start) {
+        day = "heute";
+    } else if (when >= today_start - 86400) {
+        day = "gestern";
+    }
+
+    if (day[0]) {
+        ui_set_text_fmt(message_lbl, "%s - %s %02d:%02d Uhr", source, day,
+                        tm_when.tm_hour, tm_when.tm_min);
+    } else {
+        ui_set_text_fmt(message_lbl, "%s - %02d.%02d. %02d:%02d Uhr", source,
+                        tm_when.tm_mday, tm_when.tm_mon + 1, tm_when.tm_hour,
+                        tm_when.tm_min);
     }
 }
 
@@ -700,10 +829,10 @@ static void build_header(lv_obj_t *parent)
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
     lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
-    // Schmaler als frueher: Rechts stehen jetzt zwei Sprungknoepfe, und der
-    // Name darf der Badge nicht in die Quere kommen. Zu lange Namen kuerzt
-    // LVGL mit Punkten.
-    lv_obj_set_width(name_lbl, 150);
+    // Schmal halten: Rechts stehen drei Sprungknoepfe und die Badge, und der
+    // Name darf ihr nicht in die Quere kommen. Zu lange Namen kuerzt LVGL
+    // mit Punkten — der Name ist hier die entbehrlichste Angabe.
+    lv_obj_set_width(name_lbl, 106);
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
 
@@ -734,15 +863,31 @@ static void build_header(lv_obj_t *parent)
     lv_label_set_text(jog_icon, LV_SYMBOL_SHUFFLE);
     lv_obj_center(jog_icon);
 
+    // Protokoll der Druckermeldungen. Gehoert hierher und nicht auf die
+    // Systemkachel: Was der Drucker gemeldet hat, sucht man beim Drucker.
+    log_btn = lv_button_create(parent);
+    lv_obj_set_size(log_btn, 52, 30);
+    lv_obj_align(log_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
+    lv_obj_set_style_radius(log_btn, 10, 0);
+    lv_obj_set_style_bg_color(log_btn, lv_color_hex(COL_NEUTRAL), 0);
+    lv_obj_add_event_cb(log_btn, messages_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *log_icon = lv_label_create(log_btn);
+    lv_label_set_text(log_icon, LV_SYMBOL_BELL);
+    lv_obj_center(log_icon);
+
     // Fester Abstand vom rechten Rand statt Ausrichtung am Knopf: Die Badge
     // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
     // dass die Position neu berechnet werden muss.
     badge = lv_obj_create(parent);
-    lv_obj_set_height(badge, 28);
+    // Genauso hoch wie die beiden Sprungknoepfe rechts daneben (52 x 30).
+    // Zwei Pixel Unterschied sieht man nicht bewusst, aber die Zeile wirkt
+    // dadurch unsauber ausgerichtet.
+    lv_obj_set_height(badge, 30);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 3 * (52 + 8)), 8);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(badge, 15, 0);
+    lv_obj_set_style_radius(badge, 15, 0); // halbe Hoehe: bleibt eine Kapsel
     lv_obj_set_style_border_width(badge, 0, 0);
     lv_obj_set_style_pad_hor(badge, 12, 0);
     lv_obj_set_style_pad_ver(badge, 0, 0);
@@ -852,12 +997,12 @@ static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(color), 0);
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 8);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 7);
 
     lv_obj_t *value = lv_label_create(card);
     lv_label_set_text(value, "");
     lv_obj_set_style_text_font(value, &lv_font_montserrat_24, 0);
-    lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 26);
 
     *value_out = value;
 }

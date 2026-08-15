@@ -19,6 +19,7 @@
 #include "bambuddy_mqtt.h"
 #include "bambuddy_queue.h"
 #include "bambuddy_filament.h"
+#include "bambuddy_hms.h"
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "bambuddy_version.h"
@@ -192,6 +193,8 @@ static void poll_status()
     filter["chamber_light"] = true;
     add_ams_filter(filter);
     filter["awaiting_plate_clear"] = true;
+    // Fehlerliste: ohne Eintrag im Filter kaeme sie gar nicht erst an.
+    filter["hms_errors"] = true;
     filter["speed_level"] = true;
 
     JsonDocument doc;
@@ -476,6 +479,12 @@ static void api_task(void *)
             }
         }
 
+        // Ausstehende Protokolleintraege ins NVS. Hier, im Netzwerk-Task,
+        // und mit Verzoegerung: Der Flash-Zugriff haelt kurz den Cache an,
+        // und das faellt als Ruckeln auf, wenn es mit dem Neuaufbau der
+        // Kachel zusammenfaellt.
+        bambuddy_hms_flush();
+
         // Fassung der Instanz — bewusst ausserhalb der Konfigurationspruefung
         // oben: Der Ersatzweg /updates/version braucht keinen API-Key, und
         // gerade wenn der Schluessel fehlt, will man wissen, was drueben
@@ -733,6 +742,40 @@ bool bambuddy_api_awaiting_plate_clear()
     xSemaphoreGive(status_mutex);
 
     return awaiting;
+}
+
+const char *bambuddy_api_start_blocked_reason()
+{
+    if (!status_mutex) return "";
+
+    char state[sizeof(shared_status.state)];
+    bool connected;
+
+    xSemaphoreTake(status_mutex, portMAX_DELAY);
+    connected = shared_status.printer_connected;
+    strncpy(state, shared_status.state, sizeof(state) - 1);
+    state[sizeof(state) - 1] = '\0';
+    xSemaphoreGive(status_mutex);
+
+    if (!connected) return "Bambuddy hat keine Verbindung zum Drucker.";
+    if (!state_has_job(state)) return "";
+
+    if (strcasecmp(state, "RUNNING") == 0 || strcasecmp(state, "printing") == 0) {
+        return "Es laeuft bereits ein Druck.";
+    }
+    if (strcasecmp(state, "PREPARE") == 0 || strcasecmp(state, "preparing") == 0) {
+        return "Der Drucker bereitet gerade einen Druck vor.";
+    }
+    if (strcasecmp(state, "PAUSE") == 0 || strcasecmp(state, "paused") == 0) {
+        return "Ein Druck ist pausiert und noch nicht beendet.";
+    }
+
+    // state ist ein freier String vom Drucker, kein Enum der API. Unbekannte
+    // Werte durchreichen statt verschlucken — sonst steht da "nicht bereit"
+    // ohne jeden Anhaltspunkt.
+    static char reason[64];
+    snprintf(reason, sizeof(reason), "Der Drucker ist beschaeftigt (%s).", state);
+    return reason;
 }
 
 bool bambuddy_api_has_active_job()

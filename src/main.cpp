@@ -13,8 +13,13 @@
 #include "settings_screen.h"
 #include "status_bar.h"
 #include "status_screen.h"
+#include "bambuddy_hms.h"
+#include "hms_screen.h"
+#include "nav_bar.h"
+#include "ui_fullscreen.h"
 #include "ui_layout.h"
 #include "ui_nav.h"
+#include "ui_theme.h"
 #include "ui_watch.h"
 #include "wifi_screen.h"
 
@@ -37,56 +42,74 @@ static void tile_changed_cb(lv_event_t *)
     queue_screen_set_visible(queue_visible);
     archive_screen_set_visible(archive_visible);
     general_screen_set_visible(general_visible);
+
+    // Die Leiste muss auch dem Wischen folgen, nicht nur dem Antippen —
+    // sonst zeigt sie nach einer Geste noch auf die vorherige Kachel.
+    lv_obj_t *const active = lv_tileview_get_tile_active(tileview);
+    if (active == ams_tile) nav_bar_set_active(0);
+    else if (active == status_tile) nav_bar_set_active(1);
+    else if (active == queue_tile) nav_bar_set_active(2);
+    else if (active == archive_tile) nav_bar_set_active(3);
+    else if (active == general_tile) nav_bar_set_active(4);
 }
 
-// Sprung vom Statusscreen direkt zu den Smart Plugs: erst die Kachel
-// wechseln, dann dort die Unteransicht oeffnen. Ohne den Kachelwechsel
-// wuerde die Ansicht aufgebaut, waehrend sie niemand sieht.
+void ui_nav_tile(int index)
+{
+    lv_obj_t *const tiles[] = {ams_tile, status_tile, queue_tile, archive_tile,
+                               general_tile};
+    if (!tileview || index < 0 || index >= (int)(sizeof(tiles) / sizeof(tiles[0]))) {
+        return;
+    }
+    if (!tiles[index]) return;
+
+    lv_tileview_set_tile(tileview, tiles[index], LV_ANIM_OFF);
+    tile_changed_cb(nullptr);
+}
+
+// Smart Plugs und Jog-Steuerung liegen als Vollbild ueber allem. Ein
+// Kachelwechsel ist dafuer nicht mehr noetig — und auch nicht mehr richtig:
+// Der Zurueck-Knopf soll dorthin zurueckfuehren, wo man war, nicht auf die
+// Systemkachel, die man nie aufgesucht hat.
 void ui_nav_smart_plugs()
 {
-    if (!tileview || !general_tile) return;
-
-    lv_tileview_set_tile(tileview, general_tile, LV_ANIM_OFF);
-    tile_changed_cb(nullptr);
     general_screen_show_smart_plugs();
 }
 
 void ui_nav_jog()
 {
-    if (!tileview || !general_tile) return;
-
-    lv_tileview_set_tile(tileview, general_tile, LV_ANIM_OFF);
-    tile_changed_cb(nullptr);
     general_screen_show_jog();
 }
 
-void ui_nav_status()
+void ui_nav_messages()
 {
-    if (!tileview || !status_tile) return;
-
-    lv_tileview_set_tile(tileview, status_tile, LV_ANIM_OFF);
-    tile_changed_cb(nullptr);
+    ui_fullscreen_open("Meldungen", COL_NEUTRAL, hms_screen_create, hms_screen_destroy);
 }
+
 
 // Beim Start sagen, warum zuletzt neu gestartet wurde. Ohne diese Zeile
 // bleibt nach einem unbeobachteten Reset nur Raten: Absturz, Watchdog und
 // Spannungseinbruch sehen im Nachhinein identisch aus.
-static void log_reset_reason()
+// Liefert den Grund im Klartext und sagt, ob er unerwartet war. Beides
+// landet auch im Meldungsprotokoll: Ein Neustart um drei Uhr nachts ist eine
+// Information, die man am naechsten Morgen sucht.
+static const char *reset_reason_text(bool *unexpected)
 {
     const char *text;
+    *unexpected = false;
+
     switch (esp_reset_reason()) {
     case ESP_RST_POWERON:  text = "Einschalten"; break;
     case ESP_RST_SW:       text = "Neustart durch Software"; break;
-    case ESP_RST_PANIC:    text = "ABSTURZ (Exception/Panic)"; break;
-    case ESP_RST_TASK_WDT: text = "Task-Watchdog: ein Task hat blockiert"; break;
-    case ESP_RST_INT_WDT:  text = "Interrupt-Watchdog"; break;
-    case ESP_RST_WDT:      text = "sonstiger Watchdog"; break;
-    case ESP_RST_BROWNOUT: text = "SPANNUNGSEINBRUCH (Netzteil/USB-Kabel)"; break;
+    case ESP_RST_PANIC:    text = "ABSTURZ (Exception/Panic)"; *unexpected = true; break;
+    case ESP_RST_TASK_WDT: text = "Task-Watchdog: ein Task hat blockiert"; *unexpected = true; break;
+    case ESP_RST_INT_WDT:  text = "Interrupt-Watchdog"; *unexpected = true; break;
+    case ESP_RST_WDT:      text = "sonstiger Watchdog"; *unexpected = true; break;
+    case ESP_RST_BROWNOUT: text = "SPANNUNGSEINBRUCH (Netzteil/USB-Kabel)"; *unexpected = true; break;
     case ESP_RST_DEEPSLEEP:text = "Aufwachen aus Deep Sleep"; break;
     case ESP_RST_EXT:      text = "Reset-Pin"; break;
     default:               text = "unbekannt"; break;
     }
-    Serial.printf("\n[Start] Letzter Neustart: %s\n", text);
+    return text;
 }
 
 // --- Setup & Loop ---
@@ -111,13 +134,20 @@ void setup()
 {
     Serial.begin(115200);
     delay(200); // kurz warten, sonst verschluckt der Monitor die erste Zeile
-    log_reset_reason();
+
+    bool unexpected_restart = false;
+    const char *restart_reason = reset_reason_text(&unexpected_restart);
+    Serial.printf("\n[Start] Letzter Neustart: %s\n", restart_reason);
 
     smartdisplay_init();
 
     // Theme vor dem Bau der Screens setzen, sonst blitzt kurz das falsche auf
     settings_apply_saved();
     bambuddy_config_load();
+
+    // Erst hier, nicht ganz oben: Das Protokoll liegt im NVS, und der ist
+    // nach smartdisplay_init() und dem Laden der Einstellungen bereit.
+    bambuddy_hms_report_boot(restart_reason, unexpected_restart);
 
     // Statusleiste liegt fest oben, die Screens darunter
     status_bar_create(lv_screen_active());
@@ -128,6 +158,10 @@ void setup()
     lv_obj_align(tileview, LV_ALIGN_TOP_MID, 0, STATUS_BAR_H);
     lv_obj_set_style_border_width(tileview, 0, 0);
     lv_obj_set_style_radius(tileview, 0, 0);
+    // Kein Rollbalken am unteren Rand: Welche Kachel offen ist, sagt jetzt
+    // die Navigationsleiste — der Balken haette dieselbe Auskunft ein
+    // zweites Mal gegeben, direkt darueber.
+    lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
 
     lv_obj_t *tile1 = lv_tileview_add_tile(tileview, 0, 0, (lv_dir_t)LV_DIR_RIGHT);
     lv_obj_t *tile2 = lv_tileview_add_tile(tileview, 1, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
@@ -152,6 +186,11 @@ void setup()
     archive_tile = tile4;
     general_tile = tile5;
     lv_obj_add_event_cb(tileview, tile_changed_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    // Nach dem Tileview angelegt, damit die Leiste darueber liegt und von
+    // einer Wischgeste auf der Kachel nicht verdeckt wird.
+    nav_bar_create(lv_screen_active());
+    nav_bar_set_active(1); // Startkachel ist der Status
 
     log_memory("Screens gebaut");
 

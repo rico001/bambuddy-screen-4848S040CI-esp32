@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "bambuddy_config.h"
+#include "screensaver.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 
@@ -61,6 +62,24 @@ static constexpr int SCREEN_OFF_DEFAULT = 3; // 5 Minuten
 static const char *screen_off_options =
     "Aus\n30 Sekunden\n1 Minute\n5 Minuten\n10 Minuten";
 
+// Bildschirmschoner. "Aus" laesst das Display wie bisher dunkel werden,
+// "Uhr" zeigt Uhrzeit und Druckerzustand, "Matrix" fallende Zeichen. Alles
+// haengt an derselben
+// Untaetigkeitsgrenze wie die Abschaltung — steht die auf "Aus", passiert
+// gar nichts, und der Bildschirm bleibt dauerhaft an.
+static constexpr int SAVER_COUNT = 3;
+static constexpr int SAVER_DEFAULT = SCREENSAVER_OFF;
+static const char *saver_options = "Aus\nUhr\nMatrix";
+
+// Der Schoner leuchtet gedaempft: hell genug zum Ablesen aus dem Zimmer,
+// dunkel genug, um nicht zu stoeren. Nachts noch einmal deutlich weniger —
+// ein Wanddisplay, das um drei Uhr mit 30 Prozent ins Zimmer leuchtet, will
+// niemand.
+static constexpr float SAVER_BACKLIGHT = 0.30f;
+static constexpr float SAVER_BACKLIGHT_NIGHT = 0.10f;
+static constexpr int NIGHT_FROM_HOUR = 23;
+static constexpr int NIGHT_TO_HOUR = 7;
+
 // Zeit gilt als gueltig, wenn sie nach dem 15.11.2023 liegt —
 // vorher steht die Uhr noch auf dem Startwert des Chips.
 static constexpr time_t MIN_VALID_EPOCH = 1700000000;
@@ -72,6 +91,12 @@ static constexpr uint32_t NTP_RETRY_MS = 60000;
 static lv_obj_t *settings_list;
 static lv_obj_t *dark_switch;
 static lv_obj_t *tls_switch;
+static lv_obj_t *guard_switch;
+static lv_obj_t *log_start_switch;
+static lv_obj_t *log_done_switch;
+static lv_obj_t *log_error_switch;
+static lv_obj_t *log_boot_switch;
+static lv_obj_t *log_persist_switch;
 static lv_obj_t *poll_dd;
 static lv_obj_t *tz_dd;
 static lv_obj_t *brightness_slider;
@@ -82,6 +107,18 @@ static lv_obj_t *time_row_lbl;
 // ohne Deckenlicht. Ein weisser 480x480-Bildschirm blendet dort.
 static bool dark_mode = true;
 static bool tls_verify = true;
+// Standard: an. Ein versehentlicher Start am laufenden Drucker kostet im
+// schlimmsten Fall ein Werkstueck und eine Duese — wer die Sperre nicht will,
+// schaltet sie bewusst ab.
+static bool start_guard = true;
+
+// Protokollumfang. Alles an als Standard: Ein Protokoll, das man erst
+// einschalten muss, ist beim ersten Bedarf leer.
+static bool log_print_start = true;
+static bool log_print_done = true;
+static bool log_errors = true;
+static bool log_boot = true;
+static bool log_persist = true;
 static int brightness = 100;
 static int poll_idx = POLL_DEFAULT;
 static int tz_idx = TZ_DEFAULT;
@@ -94,10 +131,12 @@ static constexpr float DIM_BACKLIGHT = 0.15f;
 enum screen_level_t { SCREEN_ON, SCREEN_DIM, SCREEN_OFF };
 
 static int screen_off_idx = SCREEN_OFF_DEFAULT;
+static int saver_idx = SAVER_DEFAULT;
 static screen_level_t screen_level = SCREEN_ON;
 static lv_obj_t *sleep_catcher = nullptr;
 static lv_timer_t *sleep_timer = nullptr;
 static lv_obj_t *screen_off_dd;
+static lv_obj_t *saver_dd;
 
 static bool ntp_requested = false;
 static uint32_t last_ntp_attempt_ms = 0;
@@ -136,11 +175,20 @@ static void load_settings()
     prefs.begin("settings", true);
     dark_mode = prefs.getBool("dark", true);
     tls_verify = prefs.getBool("tls", true);
+    start_guard = prefs.getBool("startguard", true);
+    log_print_start = prefs.getBool("logstart", true);
+    log_print_done = prefs.getBool("logdone", true);
+    log_errors = prefs.getBool("logerr", true);
+    log_boot = prefs.getBool("logboot", true);
+    log_persist = prefs.getBool("logpersist", true);
     brightness = prefs.getInt("bright", 100);
     poll_idx = prefs.getInt("poll", POLL_DEFAULT);
     tz_idx = prefs.getInt("tz", TZ_DEFAULT);
     screen_off_idx = prefs.getInt("scroff", SCREEN_OFF_DEFAULT);
+    saver_idx = prefs.getInt("saver", SAVER_DEFAULT);
     prefs.end();
+
+    if (saver_idx < 0 || saver_idx >= SAVER_COUNT) saver_idx = SAVER_DEFAULT;
 
     if (screen_off_idx < 0 || screen_off_idx >= SCREEN_OFF_COUNT) {
         screen_off_idx = SCREEN_OFF_DEFAULT;
@@ -156,10 +204,17 @@ static void save_settings()
     prefs.begin("settings", false);
     prefs.putBool("dark", dark_mode);
     prefs.putBool("tls", tls_verify);
+    prefs.putBool("startguard", start_guard);
+    prefs.putBool("logstart", log_print_start);
+    prefs.putBool("logdone", log_print_done);
+    prefs.putBool("logerr", log_errors);
+    prefs.putBool("logboot", log_boot);
+    prefs.putBool("logpersist", log_persist);
     prefs.putInt("bright", brightness);
     prefs.putInt("poll", poll_idx);
     prefs.putInt("tz", tz_idx);
     prefs.putInt("scroff", screen_off_idx);
+    prefs.putInt("saver", saver_idx);
     prefs.end();
 }
 
@@ -190,9 +245,33 @@ static float brightness_to_backlight(int value)
     return (20.0f + value * 0.8f) / 100.0f;
 }
 
+// Setzt die Hintergrundbeleuchtung nur, wenn sie sich wirklich aendert. Der
+// Schlafwaechter laeuft alle 500 ms und wuerde den Wert sonst zweimal pro
+// Sekunde erneut an den Treiber schicken.
+static float applied_backlight = -1.0f;
+
+static void set_backlight(float value)
+{
+    if (value == applied_backlight) return;
+    applied_backlight = value;
+    smartdisplay_lcd_set_backlight(value);
+}
+
 static void apply_brightness()
 {
-    smartdisplay_lcd_set_backlight(brightness_to_backlight(brightness));
+    set_backlight(brightness_to_backlight(brightness));
+}
+
+// Helligkeit des Bildschirmschoners nach Tageszeit. Wird laufend nachgezogen,
+// denn er laeuft womoeglich stundenlang und ueberschreitet dabei die Grenze.
+static float saver_backlight()
+{
+    const time_t now = time(nullptr);
+    struct tm tm_now;
+    localtime_r(&now, &tm_now);
+
+    const bool night = tm_now.tm_hour >= NIGHT_FROM_HOUR || tm_now.tm_hour < NIGHT_TO_HOUR;
+    return night ? SAVER_BACKLIGHT_NIGHT : SAVER_BACKLIGHT;
 }
 
 // ============================================================
@@ -236,17 +315,30 @@ static void set_screen_level(screen_level_t level)
 
     switch (level) {
     case SCREEN_OFF:
+        // Mit Bildschirmschoner wird nicht abgeschaltet, sondern umgeschaltet.
+        // Ohne gestellte Uhr bleibt es bei der Abschaltung — eine erfundene
+        // Uhrzeit gross ins Zimmer zu leuchten waere schlimmer als ein
+        // dunkler Bildschirm.
+        if (screensaver_mode_available((screensaver_mode_t)saver_idx)) {
+            screensaver_show((screensaver_mode_t)saver_idx);
+            set_catcher(true); // Weckflaeche ueber den Schoner legen
+            set_backlight(saver_backlight());
+            break;
+        }
+        screensaver_show(SCREENSAVER_OFF);
         set_catcher(true);
-        smartdisplay_lcd_set_backlight(0.0f);
+        set_backlight(0.0f);
         break;
     case SCREEN_DIM:
+        screensaver_show(SCREENSAVER_OFF);
         set_catcher(false);
-        smartdisplay_lcd_set_backlight(DIM_BACKLIGHT);
+        set_backlight(DIM_BACKLIGHT);
         break;
     case SCREEN_ON:
     default:
+        screensaver_show(SCREENSAVER_OFF);
         set_catcher(false);
-        smartdisplay_lcd_set_backlight(brightness_to_backlight(brightness));
+        set_backlight(brightness_to_backlight(brightness));
         break;
     }
 }
@@ -283,6 +375,10 @@ static void sleep_check_cb(lv_timer_t *)
 
     if (idle >= timeout) {
         set_screen_level(SCREEN_OFF);
+        // Der Schoner laeuft womoeglich stundenlang. set_screen_level()
+        // greift nur beim Wechsel, die Nachtabsenkung braucht aber einen
+        // Blick auf die Uhrzeit — der gehoert hierher.
+        if (screensaver_visible()) set_backlight(saver_backlight());
     } else if (idle >= dim_at) {
         set_screen_level(SCREEN_DIM);
     } else {
@@ -681,6 +777,39 @@ static void poll_dd_cb(lv_event_t *)
     save_settings();
 }
 
+static void saver_dd_cb(lv_event_t *)
+{
+    saver_idx = (int)lv_dropdown_get_selected(saver_dd);
+    save_settings();
+
+    // Laeuft gerade ein Schoner und die Wahl aendert sich, sofort umstellen —
+    // sonst bliebe der alte stehen, bis das naechste Mal geweckt wird.
+    if (screensaver_visible()) {
+        screensaver_show(screensaver_mode_available((screensaver_mode_t)saver_idx)
+                             ? (screensaver_mode_t)saver_idx
+                             : SCREENSAVER_OFF);
+    }
+}
+
+static void guard_switch_cb(lv_event_t *)
+{
+    start_guard = lv_obj_has_state(guard_switch, LV_STATE_CHECKED);
+    save_settings();
+}
+
+// Ein Rueckruf fuer alle vier: Welches Ziel gemeint ist, steht in den
+// Nutzdaten. Vier fast gleiche Funktionen waeren vier Gelegenheiten, das
+// Speichern in einer davon zu vergessen.
+static void log_switch_cb(lv_event_t *e)
+{
+    bool *target = (bool *)lv_event_get_user_data(e);
+    lv_obj_t *sw = (lv_obj_t *)lv_event_get_target(e);
+    if (!target || !sw) return;
+
+    *target = lv_obj_has_state(sw, LV_STATE_CHECKED);
+    save_settings();
+}
+
 static void screen_off_dd_cb(lv_event_t *)
 {
     screen_off_idx = lv_dropdown_get_selected(screen_off_dd);
@@ -738,15 +867,10 @@ void settings_screen_create(lv_obj_t *parent)
 {
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = lv_label_create(parent);
-    lv_label_set_text(title, LV_SYMBOL_SETTINGS "  Einstellungen");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 52, 14);
-
     // Scrollbare Liste — neue Einstellungen haengen sich unten an,
     // ohne dass Positionen angepasst werden muessen.
     settings_list = lv_obj_create(parent);
-    lv_obj_set_size(settings_list, SCREEN_W - 2 * PAD, CONTENT_H - HEADER_H - PAD);
+    lv_obj_set_size(settings_list, SCREEN_W - 2 * PAD, SCREEN_H - HEADER_H - PAD);
     lv_obj_align(settings_list, LV_ALIGN_TOP_MID, 0, HEADER_H);
     lv_obj_set_style_bg_opa(settings_list, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(settings_list, 0, 0);
@@ -754,6 +878,41 @@ void settings_screen_create(lv_obj_t *parent)
     lv_obj_set_style_pad_row(settings_list, 8, 0);
     lv_obj_set_flex_flow(settings_list, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(settings_list, LV_DIR_VER);
+
+    // --- Darstellung ---
+    //
+    // Steht bewusst ganz oben: Helligkeit, Dark Mode und Bildschirmschoner
+    // fasst man im Alltag am haeufigsten an. Server-URL und Schluessel
+    // dagegen einmal beim Einrichten und danach nie wieder.
+    settings_add_section("DARSTELLUNG");
+
+    lv_obj_t *dark_row = settings_add_row(LV_SYMBOL_IMAGE, "Dark Mode",
+                                          "Dunkles Farbschema fuer alle Screens");
+    dark_switch = lv_switch_create(dark_row);
+    lv_obj_set_size(dark_switch, 58, 32);
+    if (dark_mode) lv_obj_add_state(dark_switch, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(dark_switch, dark_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *off_row = settings_add_row(LV_SYMBOL_POWER, "Bildschirm aus",
+                                         "Nach Untaetigkeit abschalten");
+    screen_off_dd = lv_dropdown_create(off_row);
+    lv_dropdown_set_options(screen_off_dd, screen_off_options);
+    lv_dropdown_set_selected(screen_off_dd, screen_off_idx);
+    lv_obj_set_width(screen_off_dd, 150);
+    lv_obj_add_event_cb(screen_off_dd, screen_off_dd_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *saver_row = settings_add_row(LV_SYMBOL_EYE_OPEN, "Bildschirmschoner",
+                                           "Statt abschalten die Uhr zeigen");
+    saver_dd = lv_dropdown_create(saver_row);
+    lv_dropdown_set_options(saver_dd, saver_options);
+    lv_dropdown_set_selected(saver_dd, saver_idx);
+    lv_obj_set_width(saver_dd, 150);
+    lv_obj_add_event_cb(saver_dd, saver_dd_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    brightness_slider = settings_add_slider_row(LV_SYMBOL_SETTINGS, "Helligkeit",
+                                                0, 100, brightness,
+                                                brightness_cb, &brightness_value_lbl);
+    lv_label_set_text_fmt(brightness_value_lbl, "%d%%", 20 + brightness * 80 / 100);
 
     // --- Bambuddy-Verbindung ---
     settings_add_section("BAMBUDDY");
@@ -786,6 +945,14 @@ void settings_screen_create(lv_obj_t *parent)
     if (tls_verify) lv_obj_add_state(tls_switch, LV_STATE_CHECKED);
     lv_obj_add_event_cb(tls_switch, tls_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    lv_obj_t *guard_row =
+        settings_add_row(LV_SYMBOL_WARNING, "Druckstart blockieren",
+                         "Start des Drucks blockieren, wenn Drucker beschaeftigt.");
+    guard_switch = lv_switch_create(guard_row);
+    lv_obj_set_size(guard_switch, 58, 32);
+    if (start_guard) lv_obj_add_state(guard_switch, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(guard_switch, guard_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
     // --- MQTT ---
     settings_add_section("MQTT");
 
@@ -811,28 +978,38 @@ void settings_screen_create(lv_obj_t *parent)
     settings_add_text_row(LV_SYMBOL_LIST, "Status-Topic",
                           bambuddy_mqtt_topic, bambuddy_set_mqtt_topic, false, false);
 
-    // --- Darstellung ---
-    settings_add_section("DARSTELLUNG");
+    // --- Protokoll ---
+    settings_add_section("MELDUNGEN");
 
-    lv_obj_t *dark_row = settings_add_row(LV_SYMBOL_IMAGE, "Dark Mode",
-                                          "Dunkles Farbschema fuer alle Screens");
-    dark_switch = lv_switch_create(dark_row);
-    lv_obj_set_size(dark_switch, 58, 32);
-    if (dark_mode) lv_obj_add_state(dark_switch, LV_STATE_CHECKED);
-    lv_obj_add_event_cb(dark_switch, dark_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    struct log_row_t {
+        const char *icon;
+        const char *title;
+        const char *subtitle;
+        bool *value;
+        lv_obj_t **handle;
+    };
 
-    lv_obj_t *off_row = settings_add_row(LV_SYMBOL_POWER, "Bildschirm aus",
-                                         "Nach Untaetigkeit abschalten");
-    screen_off_dd = lv_dropdown_create(off_row);
-    lv_dropdown_set_options(screen_off_dd, screen_off_options);
-    lv_dropdown_set_selected(screen_off_dd, screen_off_idx);
-    lv_obj_set_width(screen_off_dd, 150);
-    lv_obj_add_event_cb(screen_off_dd, screen_off_dd_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+    const log_row_t log_rows[] = {
+        {LV_SYMBOL_PLAY, "Druckstart", "Beginn eines Auftrags vermerken",
+         &log_print_start, &log_start_switch},
+        {LV_SYMBOL_OK, "Druck fertig", "Fertige Drucke vermerken", &log_print_done,
+         &log_done_switch},
+        {LV_SYMBOL_WARNING, "Fehler", "Druckerfehler und Abbrueche vermerken",
+         &log_errors, &log_error_switch},
+        {LV_SYMBOL_POWER, "Systemstart", "Neustarts des Displays vermerken", &log_boot,
+         &log_boot_switch},
+        {LV_SYMBOL_SAVE, "Dauerhaft speichern", "Aus: kein Flimmern, aber weg nach Neustart",
+         &log_persist, &log_persist_switch},
+    };
 
-    brightness_slider = settings_add_slider_row(LV_SYMBOL_SETTINGS, "Helligkeit",
-                                                0, 100, brightness,
-                                                brightness_cb, &brightness_value_lbl);
-    lv_label_set_text_fmt(brightness_value_lbl, "%d%%", 20 + brightness * 80 / 100);
+    for (const log_row_t &row : log_rows) {
+        lv_obj_t *parent_row = settings_add_row(row.icon, row.title, row.subtitle);
+        lv_obj_t *sw = lv_switch_create(parent_row);
+        lv_obj_set_size(sw, 58, 32);
+        if (*row.value) lv_obj_add_state(sw, LV_STATE_CHECKED);
+        lv_obj_add_event_cb(sw, log_switch_cb, LV_EVENT_VALUE_CHANGED, row.value);
+        *row.handle = sw;
+    }
 
     // --- Zeit ---
     settings_add_section("ZEIT");
@@ -861,9 +1038,16 @@ void settings_screen_destroy()
     settings_list = nullptr;
     dark_switch = nullptr;
     tls_switch = nullptr;
+    guard_switch = nullptr;
+    log_start_switch = nullptr;
+    log_done_switch = nullptr;
+    log_error_switch = nullptr;
+    log_boot_switch = nullptr;
+    log_persist_switch = nullptr;
     poll_dd = nullptr;
     tz_dd = nullptr;
     screen_off_dd = nullptr;
+    saver_dd = nullptr;
     brightness_slider = nullptr;
     brightness_value_lbl = nullptr;
     time_row_lbl = nullptr;
@@ -884,6 +1068,27 @@ uint32_t settings_poll_interval_idle_ms()
     return idle > POLL_IDLE_MAX_MS ? POLL_IDLE_MAX_MS : idle;
 }
 
+
+bool settings_start_guard()
+{
+    return start_guard;
+}
+
+bool settings_log_print_start() { return log_print_start; }
+bool settings_log_print_done() { return log_print_done; }
+bool settings_log_errors() { return log_errors; }
+bool settings_log_boot() { return log_boot; }
+bool settings_log_persist() { return log_persist; }
+
+uint32_t settings_display_idle_ms()
+{
+    return lv_display_get_inactive_time(nullptr);
+}
+
+bool settings_log_any()
+{
+    return log_print_start || log_print_done || log_errors || log_boot;
+}
 
 bool settings_tls_verify() { return tls_verify; }
 

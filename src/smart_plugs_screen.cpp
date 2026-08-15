@@ -174,13 +174,10 @@ void smart_plugs_screen_create(lv_obj_t *parent)
     list_loaded = false;
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *title = lv_label_create(parent);
-    lv_label_set_text(title, LV_SYMBOL_POWER "  Smart Plugs");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 52, 14);
-
     list_cont = lv_obj_create(parent);
-    lv_obj_set_size(list_cont, SCREEN_W - 2 * PAD, CONTENT_H - HEADER_H - 34);
+    // Volle Bildschirmhoehe: Die Ansicht liegt ueber allem, Status- und
+    // Navigationsleiste sind verdeckt.
+    lv_obj_set_size(list_cont, SCREEN_W - 2 * PAD, SCREEN_H - HEADER_H - 34);
     lv_obj_align(list_cont, LV_ALIGN_TOP_MID, 0, HEADER_H);
     lv_obj_set_style_bg_opa(list_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(list_cont, 0, 0);
