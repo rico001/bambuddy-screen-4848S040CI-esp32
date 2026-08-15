@@ -53,6 +53,11 @@ bool settings_log_any();
 // hier ab.
 bool settings_log_persist();
 
+// Ist der Update-Webserver freigeschaltet? (Standard: nein.) Den Dienst
+// selbst startet der Einstellungs-Screen; der Wert steht hier fuer Anzeigen,
+// die wissen wollen, ob das Geraet gerade von aussen beschreibbar ist.
+bool settings_ota_web();
+
 // Wie lange wurde der Bildschirm nicht mehr beruehrt? Das Protokoll wartet
 // damit auf einen ruhigen Moment fuer seinen Flash-Zugriff.
 uint32_t settings_display_idle_ms();

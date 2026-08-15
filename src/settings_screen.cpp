@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "bambuddy_config.h"
+#include "ota_service.h"
 #include "screensaver.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
@@ -102,6 +103,8 @@ static lv_obj_t *tz_dd;
 static lv_obj_t *brightness_slider;
 static lv_obj_t *brightness_value_lbl;
 static lv_obj_t *time_row_lbl;
+static lv_obj_t *ota_switch;
+static lv_obj_t *ota_row_lbl;
 
 // Dunkel ist Standard: Das Geraet haengt an der Wand, oft in einem Raum
 // ohne Deckenlicht. Ein weisser 480x480-Bildschirm blendet dort.
@@ -119,6 +122,10 @@ static bool log_print_done = true;
 static bool log_errors = true;
 static bool log_boot = true;
 static bool log_persist = true;
+
+// Web-Update: aus als Standard. Eingeschaltet kann jeder im WLAN Firmware
+// aufspielen — das soll eine bewusste Entscheidung sein, keine Werkseinstellung.
+static bool ota_web = false;
 static int brightness = 100;
 static int poll_idx = POLL_DEFAULT;
 static int tz_idx = TZ_DEFAULT;
@@ -181,6 +188,7 @@ static void load_settings()
     log_errors = prefs.getBool("logerr", true);
     log_boot = prefs.getBool("logboot", true);
     log_persist = prefs.getBool("logpersist", true);
+    ota_web = prefs.getBool("otaweb", false);
     brightness = prefs.getInt("bright", 100);
     poll_idx = prefs.getInt("poll", POLL_DEFAULT);
     tz_idx = prefs.getInt("tz", TZ_DEFAULT);
@@ -210,6 +218,7 @@ static void save_settings()
     prefs.putBool("logerr", log_errors);
     prefs.putBool("logboot", log_boot);
     prefs.putBool("logpersist", log_persist);
+    prefs.putBool("otaweb", ota_web);
     prefs.putInt("bright", brightness);
     prefs.putInt("poll", poll_idx);
     prefs.putInt("tz", tz_idx);
@@ -692,11 +701,50 @@ lv_obj_t *settings_add_text_row(const char *icon, const char *title,
 }
 
 // ============================================================
+// Web-Update
+// ============================================================
+
+// Die Zeile sagt, wo der Dienst zu erreichen ist — eine Adresse, die man erst
+// im Router suchen muss, waere die halbe Auskunft. Waehrend eines Uploads
+// steht stattdessen der Fortschritt dort: Der Browser zeigt zwar seinen
+// eigenen Balken, aber wer vor dem Geraet steht, sieht sonst nur ein
+// flackerndes Display und weiss nicht, ob das gewollt ist.
+static void refresh_ota_row()
+{
+    if (!ota_row_lbl) return;
+
+    const int pct = ota_service_progress();
+    if (pct >= 0) {
+        lv_label_set_text_fmt(ota_row_lbl, "Update laeuft: %d %%", pct);
+        lv_obj_set_style_text_color(ota_row_lbl, lv_color_hex(COL_ACCENT), 0);
+        return;
+    }
+
+    if (!ota_service_enabled()) {
+        lv_label_set_text(ota_row_lbl, "Firmware im Browser aufspielen");
+        lv_obj_set_style_text_color(ota_row_lbl, lv_color_hex(COL_MUTED), 0);
+        return;
+    }
+
+    if (ota_service_online()) {
+        lv_label_set_text(ota_row_lbl, ota_service_address());
+        lv_obj_set_style_text_color(ota_row_lbl, lv_color_hex(COL_OK), 0);
+        return;
+    }
+
+    const char *msg = ota_service_message();
+    lv_label_set_text(ota_row_lbl, msg[0] ? msg : "Wartet auf WLAN");
+    lv_obj_set_style_text_color(ota_row_lbl, lv_color_hex(COL_MUTED), 0);
+}
+
+// ============================================================
 // NTP
 // ============================================================
 
 static void time_tick_cb(lv_timer_t *)
 {
+    refresh_ota_row();
+
     const bool online = (WiFi.status() == WL_CONNECTED);
     const time_t now = time(nullptr);
     const bool valid = now >= MIN_VALID_EPOCH;
@@ -810,6 +858,14 @@ static void log_switch_cb(lv_event_t *e)
     save_settings();
 }
 
+static void ota_switch_cb(lv_event_t *)
+{
+    ota_web = lv_obj_has_state(ota_switch, LV_STATE_CHECKED);
+    save_settings();
+    ota_service_set_enabled(ota_web);
+    refresh_ota_row(); // nicht bis zum naechsten Sekundentakt warten
+}
+
 static void screen_off_dd_cb(lv_event_t *)
 {
     screen_off_idx = lv_dropdown_get_selected(screen_off_dd);
@@ -861,6 +917,11 @@ void settings_apply_saved()
     // Uhr und Bildschirmabschaltung gehoeren zum Geraet und duerfen nicht
     // vom spaeter nur bei Bedarf erzeugten Einstellungs-Screen abhaengen.
     start_background_services();
+
+    // Ebenso das Web-Update: Es muss auch dann laufen, wenn der
+    // Einstellungs-Screen seit dem Start nie geoeffnet wurde — sonst waere der
+    // Schalter nach jedem Neustart wirkungslos, bis jemand nachsieht.
+    ota_service_set_enabled(ota_web);
 }
 
 void settings_screen_create(lv_obj_t *parent)
@@ -1025,6 +1086,18 @@ void settings_screen_create(lv_obj_t *parent)
     // Untertitel dieser Zeile dient als Sync-Statusanzeige
     row_create(LV_SYMBOL_BELL, "Uhrzeit", "", &time_row_lbl);
 
+    // --- Firmware ---
+    //
+    // Ganz unten: Ein Schalter, der einen Upload-Weg ins Geraet oeffnet, soll
+    // nicht neben der Helligkeit liegen, wo man ihn im Vorbeiwischen trifft.
+    settings_add_section("FIRMWARE");
+
+    lv_obj_t *ota_row = row_create(LV_SYMBOL_DOWNLOAD, "Web-Update", "", &ota_row_lbl);
+    ota_switch = lv_switch_create(ota_row);
+    lv_obj_set_size(ota_switch, 58, 32);
+    if (ota_web) lv_obj_add_state(ota_switch, LV_STATE_CHECKED);
+    lv_obj_add_event_cb(ota_switch, ota_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
     time_tick_cb(nullptr);
 }
 
@@ -1051,6 +1124,8 @@ void settings_screen_destroy()
     brightness_slider = nullptr;
     brightness_value_lbl = nullptr;
     time_row_lbl = nullptr;
+    ota_switch = nullptr;
+    ota_row_lbl = nullptr;
     edit_title = nullptr;
     edit_ta = nullptr;
     edit_kb = nullptr;
@@ -1079,6 +1154,7 @@ bool settings_log_print_done() { return log_print_done; }
 bool settings_log_errors() { return log_errors; }
 bool settings_log_boot() { return log_boot; }
 bool settings_log_persist() { return log_persist; }
+bool settings_ota_web() { return ota_web; }
 
 uint32_t settings_display_idle_ms()
 {
