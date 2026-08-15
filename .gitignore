@@ -6,3 +6,4 @@ bambuddy-docs/selfhosted/*
 # Vom Build erzeugt (pre_build.py)
 src/build_stamp.cpp
 firmware-build/
+update.sh
