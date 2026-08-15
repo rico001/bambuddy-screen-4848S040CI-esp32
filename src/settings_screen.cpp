@@ -12,6 +12,7 @@
 #include "screensaver.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_font.h"
 
 // ============================================================
 // Layout
@@ -411,7 +412,7 @@ lv_obj_t *settings_add_section(const char *title)
     lv_obj_t *lbl = lv_label_create(settings_list);
     lv_label_set_text(lbl, title);
     lv_obj_set_width(lbl, LV_PCT(100));
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_set_style_pad_top(lbl, 6, 0);
     lv_obj_set_style_pad_left(lbl, 4, 0);
@@ -467,7 +468,7 @@ static lv_obj_t *row_create(const char *icon, const char *title, const char *sub
         lv_label_set_text(sub_lbl, subtitle);
         lv_obj_set_width(sub_lbl, LV_PCT(100));
         lv_label_set_long_mode(sub_lbl, LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_font(sub_lbl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(sub_lbl, &bb_font_12, 0);
         lv_obj_set_style_text_color(sub_lbl, lv_color_hex(COL_MUTED), 0);
         lv_obj_set_style_pad_top(sub_lbl, 2, 0);
     }
@@ -602,7 +603,7 @@ static void edit_overlay_create()
     lv_obj_add_flag(edit_overlay, LV_OBJ_FLAG_HIDDEN);
 
     edit_title = lv_label_create(edit_overlay);
-    lv_obj_set_style_text_font(edit_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(edit_title, &bb_font_16, 0);
     lv_obj_set_width(edit_title, SCREEN_W - 2 * PAD);
     lv_label_set_long_mode(edit_title, LV_LABEL_LONG_DOT);
     lv_obj_align(edit_title, LV_ALIGN_TOP_LEFT, PAD + 4, 18);
@@ -616,7 +617,7 @@ static void edit_overlay_create()
 
     lv_obj_t *hint = lv_label_create(edit_overlay);
     lv_label_set_text(hint, "Wird sofort gespeichert.");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(hint, &bb_font_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, PAD + 4, 116);
 
@@ -715,7 +716,7 @@ static void refresh_ota_row()
 
     const int pct = ota_service_progress();
     if (pct >= 0) {
-        lv_label_set_text_fmt(ota_row_lbl, "Update laeuft: %d %%", pct);
+        lv_label_set_text_fmt(ota_row_lbl, "Update läuft: %d %%", pct);
         lv_obj_set_style_text_color(ota_row_lbl, lv_color_hex(COL_ACCENT), 0);
         return;
     }
@@ -948,14 +949,14 @@ void settings_screen_create(lv_obj_t *parent)
     settings_add_section("DARSTELLUNG");
 
     lv_obj_t *dark_row = settings_add_row(LV_SYMBOL_IMAGE, "Dark Mode",
-                                          "Dunkles Farbschema fuer alle Screens");
+                                          "Dunkles Farbschema für alle Screens");
     dark_switch = lv_switch_create(dark_row);
     lv_obj_set_size(dark_switch, 58, 32);
     if (dark_mode) lv_obj_add_state(dark_switch, LV_STATE_CHECKED);
     lv_obj_add_event_cb(dark_switch, dark_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
     lv_obj_t *off_row = settings_add_row(LV_SYMBOL_POWER, "Bildschirm aus",
-                                         "Nach Untaetigkeit abschalten");
+                                         "Nach Untätigkeit abschalten");
     screen_off_dd = lv_dropdown_create(off_row);
     lv_dropdown_set_options(screen_off_dd, screen_off_options);
     lv_dropdown_set_selected(screen_off_dd, screen_off_idx);
@@ -999,7 +1000,7 @@ void settings_screen_create(lv_obj_t *parent)
     lv_obj_set_width(poll_dd, 150);
     lv_obj_add_event_cb(poll_dd, poll_dd_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    lv_obj_t *tls_row = settings_add_row(LV_SYMBOL_WARNING, "Zertifikat pruefen",
+    lv_obj_t *tls_row = settings_add_row(LV_SYMBOL_WARNING, "Zertifikat prüfen",
                                          "Nur zum Debuggen abschalten");
     tls_switch = lv_switch_create(tls_row);
     lv_obj_set_size(tls_switch, 58, 32);
@@ -1008,7 +1009,7 @@ void settings_screen_create(lv_obj_t *parent)
 
     lv_obj_t *guard_row =
         settings_add_row(LV_SYMBOL_WARNING, "Druckstart blockieren",
-                         "Start des Drucks blockieren, wenn Drucker beschaeftigt.");
+                         "Start des Drucks blockieren, wenn Drucker beschäftigt.");
     guard_switch = lv_switch_create(guard_row);
     lv_obj_set_size(guard_switch, 58, 32);
     if (start_guard) lv_obj_add_state(guard_switch, LV_STATE_CHECKED);
@@ -1055,7 +1056,7 @@ void settings_screen_create(lv_obj_t *parent)
          &log_print_start, &log_start_switch},
         {LV_SYMBOL_OK, "Druck fertig", "Fertige Drucke vermerken", &log_print_done,
          &log_done_switch},
-        {LV_SYMBOL_WARNING, "Fehler", "Druckerfehler und Abbrueche vermerken",
+        {LV_SYMBOL_WARNING, "Fehler", "Druckerfehler und Abbrüche vermerken",
          &log_errors, &log_error_switch},
         {LV_SYMBOL_POWER, "Systemstart", "Neustarts des Displays vermerken", &log_boot,
          &log_boot_switch},

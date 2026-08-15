@@ -11,6 +11,7 @@
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD;
@@ -167,7 +168,7 @@ static lv_obj_t *make_caption(lv_obj_t *parent, const char *text, int x, int y)
 {
     lv_obj_t *lbl = lv_label_create(parent);
     lv_label_set_text(lbl, text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, x, y);
     return lbl;
@@ -178,7 +179,7 @@ static lv_obj_t *make_caption(lv_obj_t *parent, const char *text, int x, int y)
 static lv_obj_t *make_value(lv_obj_t *parent, int x, int y, int width)
 {
     lv_obj_t *lbl = lv_label_create(parent);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_width(lbl, width);
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(lbl, LV_ALIGN_TOP_LEFT, x, y);
@@ -338,7 +339,7 @@ static void wheel_open()
 
     lv_obj_t *title = lv_label_create(wheel_overlay);
     lv_label_set_text(title, "Eigene Farbe");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, &bb_font_16, 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 14);
 
     wheel_canvas = lv_canvas_create(wheel_overlay);
@@ -375,7 +376,7 @@ static void wheel_open()
     make_button(wheel_overlay, 150, 56, LV_ALIGN_TOP_LEFT, PAD + 104, 332, COL_NEUTRAL,
                 "Abbrechen", wheel_cancel_cb);
     make_button(wheel_overlay, CONTENT_W - 104 - 158, 56, LV_ALIGN_TOP_RIGHT, -PAD, 332,
-                COL_OK, "Uebernehmen", wheel_ok_cb);
+                COL_OK, "Übernehmen", wheel_ok_cb);
 }
 
 // ============================================================
@@ -625,7 +626,7 @@ static void rebuild_list()
         // ob eigene Temperaturen gelten oder die Materialtabelle.
         lv_obj_t *badge = lv_label_create(row);
         lv_label_set_text(badge, p.local ? "Lokal" : "Integriert");
-        lv_obj_set_style_text_font(badge, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(badge, &bb_font_12, 0);
         lv_obj_set_style_text_color(badge, lv_color_hex(p.local ? COL_OK : COL_WARN), 0);
         lv_obj_align(badge, LV_ALIGN_RIGHT_MID, -14, 0);
     }
@@ -647,7 +648,7 @@ static void rebuild_list()
 
         lv_obj_t *lbl = lv_label_create(more);
         lv_label_set_text_fmt(lbl, "%d weitere Profile in diesem Material", hidden);
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
         lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
         lv_obj_align(lbl, LV_ALIGN_LEFT_MID, 14, 0);
     }
@@ -875,7 +876,7 @@ static void build(const char *slot_label)
 
     title_lbl = lv_label_create(overlay);
     lv_label_set_text(title_lbl, slot_label);
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
     lv_obj_set_width(title_lbl, SCREEN_W - (PAD + 4) - (44 + PAD) - 8);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 8);

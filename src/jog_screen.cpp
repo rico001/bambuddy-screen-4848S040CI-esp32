@@ -5,6 +5,7 @@
 #include "bambuddy_api.h"
 #include "ui_layout.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int BUTTON_SIZE = 64;
@@ -73,7 +74,7 @@ static void warning_open_cb(lv_event_t *)
     warning_box = lv_msgbox_create(lv_layer_top());
     lv_msgbox_add_title(warning_box, LV_SYMBOL_WARNING "  Sicherheitshinweis");
     lv_msgbox_add_text(warning_box,
-                       "Manuelle Bewegungen koennen Kollisionen verursachen. "
+                       "Manuelle Bewegungen können Kollisionen verursachen. "
                        "Das Display erkennt keine Hindernisse. Drucker beobachten "
                        "und zuerst kleine Schritte verwenden.");
 
@@ -181,7 +182,7 @@ static void ui_tick_cb(lv_timer_t *)
         ui_set_text(message_lbl, local_message);
         ui_set_text_color(message_lbl, COL_ERR);
     } else if (active_job) {
-        ui_set_text(message_lbl, "Jogging waehrend eines Drucks gesperrt");
+        ui_set_text(message_lbl, "Jogging während eines Drucks gesperrt");
         ui_set_text_color(message_lbl, COL_WARN);
     } else if (!ready) {
         ui_set_text(message_lbl, "Drucker nicht verbunden");
@@ -206,7 +207,7 @@ static lv_obj_t *motion_button(lv_obj_t *parent, int x, int y, const char *symbo
 
     lv_obj_t *label = lv_label_create(button);
     lv_label_set_text(label, symbol);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(label, &bb_font_24, 0);
     lv_obj_center(label);
 
     if (motion_button_count < 9) motion_buttons[motion_button_count++] = button;
@@ -217,7 +218,7 @@ static void axis_label(lv_obj_t *parent, int x, int y, const char *text)
 {
     lv_obj_t *label = lv_label_create(parent);
     lv_label_set_text(label, text);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(label, &bb_font_24, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(label, LV_ALIGN_TOP_LEFT, x, y);
 }
@@ -259,7 +260,7 @@ void jog_screen_create(lv_obj_t *parent)
 
     lv_obj_t *step_title = lv_label_create(parent);
     lv_label_set_text(step_title, "SCHRITT (MM)");
-    lv_obj_set_style_text_font(step_title, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(step_title, &bb_font_12, 0);
     lv_obj_set_style_text_color(step_title, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(step_title, LV_ALIGN_TOP_LEFT, 33, 310);
 
@@ -273,7 +274,7 @@ void jog_screen_create(lv_obj_t *parent)
 
         lv_obj_t *label = lv_label_create(button);
         lv_label_set_text(label, step_texts[i]);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_16, 0);
+        lv_obj_set_style_text_font(label, &bb_font_16, 0);
         lv_obj_center(label);
         step_buttons[i] = button;
     }
@@ -283,7 +284,7 @@ void jog_screen_create(lv_obj_t *parent)
     lv_label_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, SCREEN_W - 2 * PAD);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -3);
 
     ui_timer = lv_timer_create(ui_tick_cb, 250, nullptr);

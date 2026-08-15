@@ -8,6 +8,7 @@
 #include "ui_layout.h"
 #include "ui_util.h"
 #include "ui_watch.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int HEADER_H = 54;
@@ -94,7 +95,7 @@ static void build_row(int index)
     lv_label_set_text(name, plug.name);
     lv_obj_set_width(name, SCREEN_W - 2 * PAD - 52 - 104 - 44);
     lv_label_set_long_mode(name, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(name, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(name, &bb_font_16, 0);
     lv_obj_align(name, LV_ALIGN_TOP_LEFT, 66, 10);
 
     lv_obj_t *status = lv_label_create(row);
@@ -108,7 +109,7 @@ static void build_row(int index)
         lv_label_set_text(status, plug.is_on ? LV_SYMBOL_WIFI "  ON" : "OFF");
         lv_obj_set_style_text_color(status, lv_color_hex(plug.is_on ? COL_OK : COL_MUTED), 0);
     }
-    lv_obj_set_style_text_font(status, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(status, &bb_font_12, 0);
     lv_obj_align(status, LV_ALIGN_TOP_LEFT, 66, 40);
 
     lv_obj_t *button = lv_button_create(row);
@@ -195,7 +196,7 @@ void smart_plugs_screen_create(lv_obj_t *parent)
     lv_label_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, SCREEN_W - 2 * PAD);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(message_lbl, lv_color_hex(COL_ACCENT), 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -5);
 

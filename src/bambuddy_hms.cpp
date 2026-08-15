@@ -38,12 +38,12 @@ static const hms_text_t HMS_TEXTS[] = {
     {"8030", "Filament aufgebraucht - Druck pausiert"},
     {"0300_8004", "Filament leer - bitte neu einlegen"},
     {"0300_4008", "AMS-Filamentwechsel fehlgeschlagen"},
-    {"0700_8010", "AMS-Motor ueberlastet - Filament verheddert oder Spule klemmt"},
-    {"0700_8007", "Extrudieren fehlgeschlagen - Extruder moeglicherweise verstopft"},
+    {"0700_8010", "AMS-Motor überlastet - Filament verheddert oder Spule klemmt"},
+    {"0700_8007", "Extrudieren fehlgeschlagen - Extruder möglicherweise verstopft"},
 
     // Duese und Bett
-    {"0300_4006", "Duese verstopft"},
-    {"0300_8016", "Duese mit Filament verstopft - Druck abbrechen und reinigen"},
+    {"0300_4006", "Düse verstopft"},
+    {"0300_8016", "Düse mit Filament verstopft - Druck abbrechen und reinigen"},
     {"0300_4002", "Bettnivellierung fehlgeschlagen - Druck gestoppt"},
 
     // Druck gestoppt oder pausiert

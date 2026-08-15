@@ -8,6 +8,7 @@
 #include "filament_config_view.h"
 #include "ui_layout.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int HEADER_H = 48;
@@ -216,7 +217,7 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
 
     lv_obj_t *number = lv_label_create(hub);
     lv_label_set_text_fmt(number, "%d", slot_index + 1);
-    lv_obj_set_style_text_font(number, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(number, &bb_font_12, 0);
     lv_obj_set_style_text_color(number, lv_color_hex(contrast_color(hub_color)), 0);
     lv_obj_center(number);
 
@@ -232,7 +233,7 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_obj_set_size(type, SLOT_W - 6, 30);
     lv_label_set_long_mode(type, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(type, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(type, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(type, &bb_font_12, 0);
     if (!tray.exists) lv_obj_set_style_text_color(type, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(type, LV_ALIGN_TOP_MID, 0, 44);
 
@@ -260,7 +261,7 @@ static void build_unit(const bambuddy_ams_unit_t &unit)
     unit_name(unit, name, sizeof(name));
     lv_obj_t *name_lbl = lv_label_create(card);
     lv_label_set_text(name_lbl, name);
-    lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(name_lbl, &bb_font_24, 0);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, 16, 14);
 
     lv_obj_t *humidity_lbl = lv_label_create(card);
@@ -271,7 +272,7 @@ static void build_unit(const bambuddy_ams_unit_t &unit)
     }
     lv_obj_set_style_text_color(humidity_lbl,
                                 lv_color_hex(humidity_color(unit.humidity)), 0);
-    lv_obj_set_style_text_font(humidity_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(humidity_lbl, &bb_font_16, 0);
     lv_obj_align(humidity_lbl, LV_ALIGN_TOP_RIGHT, -126, 17);
 
     lv_obj_t *temp_lbl = lv_label_create(card);
@@ -282,7 +283,7 @@ static void build_unit(const bambuddy_ams_unit_t &unit)
         lv_label_set_text(temp_lbl, "-- C");
     }
     lv_obj_set_style_text_color(temp_lbl, lv_color_hex(COL_WARN), 0);
-    lv_obj_set_style_text_font(temp_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(temp_lbl, &bb_font_16, 0);
     lv_obj_align(temp_lbl, LV_ALIGN_TOP_RIGHT, -16, 17);
 
     const int slot_count = unit.is_ht ? (unit.tray_count > 0 ? unit.tray_count : 1)
@@ -355,7 +356,7 @@ static void build_screen()
 
     lv_obj_t *title = lv_label_create(root);
     lv_label_set_text(title, "AMS Status");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, &bb_font_16, 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     // Der Hintergrundabruf laeuft alle 30 Sekunden. Nach einem Spulenwechsel

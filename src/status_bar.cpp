@@ -10,6 +10,7 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 
 // Meldet der Netzwerk-Task laenger nichts, haengt er — das darf nicht als
@@ -45,7 +46,7 @@ static void update_source()
         return;
     }
     if (millis() - beat > HEARTBEAT_TIMEOUT_MS) {
-        ui_set_text_fmt(source_lbl, "%s haengt", source);
+        ui_set_text_fmt(source_lbl, "%s hängt", source);
         ui_set_text_color(source_lbl, COL_ERR);
         return;
     }
@@ -102,17 +103,17 @@ void status_bar_create(lv_obj_t *parent)
     lv_obj_set_style_pad_ver(bar, 0, 0);
 
     wifi_lbl = lv_label_create(bar);
-    lv_obj_set_style_text_font(wifi_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(wifi_lbl, &bb_font_12, 0);
     lv_obj_set_width(wifi_lbl, 210);
     lv_label_set_long_mode(wifi_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(wifi_lbl, LV_ALIGN_LEFT_MID, 0, 0);
 
     source_lbl = lv_label_create(bar);
-    lv_obj_set_style_text_font(source_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(source_lbl, &bb_font_12, 0);
     lv_obj_align(source_lbl, LV_ALIGN_CENTER, 40, 0);
 
     clock_lbl = lv_label_create(bar);
-    lv_obj_set_style_text_font(clock_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(clock_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(clock_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(clock_lbl, LV_ALIGN_RIGHT_MID, 0, 0);
 

@@ -8,6 +8,7 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int HEADER_H = 54;
@@ -45,7 +46,7 @@ static void format_when(const bambuddy_hms_entry_t &e, char *out, size_t out_len
     // Aus dem Speicher geladen und ohne Zeitstempel: Die Laufzeitangabe
     // stammt aus einem frueheren Lauf und waere jetzt irrefuehrend.
     if (e.when == 0 && e.restored) {
-        snprintf(out, out_len, "frueherer Lauf");
+        snprintf(out, out_len, "früherer Lauf");
         return;
     }
 
@@ -116,7 +117,7 @@ static void build_row(const bambuddy_hms_entry_t &e)
     } else {
         lv_label_set_text(meta, bambuddy_hms_severity_text(e.severity));
     }
-    lv_obj_set_style_text_font(meta, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(meta, &bb_font_12, 0);
     lv_obj_set_style_text_color(meta, lv_color_hex(COL_MUTED), 0);
     lv_obj_set_width(meta, SCREEN_W - 2 * PAD - 26 - 130);
     lv_label_set_long_mode(meta, LV_LABEL_LONG_DOT);
@@ -127,7 +128,7 @@ static void build_row(const bambuddy_hms_entry_t &e)
 
     lv_obj_t *when_lbl = lv_label_create(row);
     lv_label_set_text(when_lbl, when);
-    lv_obj_set_style_text_font(when_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(when_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(when_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(when_lbl, LV_ALIGN_BOTTOM_RIGHT, -14, -8);
 }
@@ -148,7 +149,7 @@ static void clear_cb(lv_event_t *)
     if (ui_confirm_is_open()) return;
 
     ui_confirm("Protokoll leeren?",
-               "Alle Eintraege werden geloescht, auch die gespeicherten.",
+               "Alle Einträge werden gelöscht, auch die gespeicherten.",
                "Abbrechen", "Leeren", COL_ERR, clear_confirmed, nullptr);
 }
 
@@ -196,7 +197,7 @@ void hms_screen_create(lv_obj_t *parent)
     // verschwindet mit der Ansicht.
     lv_obj_t *hint = lv_label_create(parent);
     lv_label_set_text(hint, "Fehlercodes: wiki.bambulab.com/en/hms/home");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(hint, &bb_font_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_LEFT, PAD + 2, -12);
 

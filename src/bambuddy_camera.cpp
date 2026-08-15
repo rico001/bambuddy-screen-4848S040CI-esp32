@@ -46,7 +46,7 @@ static bool ensure_buffers()
 
     if (!frame_a || !frame_b || !jpeg_buf) {
         Serial.println("[Kamera] Kein Speicher fuer die Bildpuffer");
-        strncpy(last_error, "Kein Speicher fuer das Bild", sizeof(last_error) - 1);
+        strncpy(last_error, "Kein Speicher für das Bild", sizeof(last_error) - 1);
         return false;
     }
 

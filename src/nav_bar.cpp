@@ -4,6 +4,7 @@
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_theme.h"
+#include "ui_font.h"
 
 static constexpr int BTN_W = SCREEN_W / NAV_TILE_COUNT;
 
@@ -34,7 +35,7 @@ struct nav_entry_t {
 static const nav_entry_t ENTRIES[NAV_TILE_COUNT] = {
     {ICON_SPOOL, nullptr, "AMS"},
     {ICON_IMAGE, nullptr, "Status"},
-    {ICON_SYMBOL, LV_SYMBOL_LIST, "Auftraege"},
+    {ICON_SYMBOL, LV_SYMBOL_LIST, "Aufträge"},
     {ICON_SYMBOL, LV_SYMBOL_DIRECTORY, "Archiv"},
     {ICON_SYMBOL, LV_SYMBOL_SETTINGS, "System"},
 };
@@ -138,14 +139,14 @@ void nav_bar_create(lv_obj_t *parent)
         default:
             nb.symbol = lv_label_create(nb.btn);
             lv_label_set_text(nb.symbol, ENTRIES[i].symbol);
-            lv_obj_set_style_text_font(nb.symbol, &lv_font_montserrat_16, 0);
+            lv_obj_set_style_text_font(nb.symbol, &bb_font_16, 0);
             lv_obj_align(nb.symbol, LV_ALIGN_TOP_MID, 0, 3);
             break;
         }
 
         nb.text = lv_label_create(nb.btn);
         lv_label_set_text(nb.text, ENTRIES[i].label);
-        lv_obj_set_style_text_font(nb.text, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(nb.text, &bb_font_12, 0);
         lv_obj_align(nb.text, LV_ALIGN_BOTTOM_MID, 0, -3);
     }
 }

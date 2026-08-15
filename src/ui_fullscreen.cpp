@@ -2,6 +2,7 @@
 
 #include "ui_layout.h"
 #include "ui_watch.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 
@@ -47,7 +48,7 @@ void ui_fullscreen_open(const char *title, uint32_t accent,
 
     lv_obj_t *title_lbl = lv_label_create(overlay);
     lv_label_set_text(title_lbl, title);
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
     lv_obj_set_width(title_lbl, SCREEN_W - (PAD + 52) - PAD);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 52, 14);

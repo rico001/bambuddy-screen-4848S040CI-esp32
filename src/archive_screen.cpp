@@ -13,6 +13,7 @@
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int CONTENT_W = SCREEN_W - 2 * PAD;
@@ -48,7 +49,7 @@ static const char *status_text(const char *status)
     if (strcasecmp(status, "success") == 0 || strcasecmp(status, "finished") == 0) return "fertig";
     if (strcasecmp(status, "failed") == 0) return "fehlgeschlagen";
     if (strcasecmp(status, "cancelled") == 0) return "abgebrochen";
-    if (strcasecmp(status, "running") == 0) return "laeuft";
+    if (strcasecmp(status, "running") == 0) return "läuft";
     return status && status[0] ? status : "unbekannt";
 }
 
@@ -72,7 +73,7 @@ static void set_enabled(lv_obj_t *btn, bool enabled)
 static void update_pager()
 {
     if (shown_count == 0) {
-        ui_set_text(page_lbl, "0 Eintraege");
+        ui_set_text(page_lbl, "0 Einträge");
     } else {
         const int first = bambuddy_archive_current_page() * BB_ARCHIVE_PAGE_SIZE + 1;
         const int last = first + shown_count - 1;
@@ -111,10 +112,10 @@ static void start_cb(lv_event_t *e)
     if (blocked[0]) {
         char warning[220];
         snprintf(warning, sizeof(warning),
-                 "%s\n\n%s\nEin Start ist erst moeglich, wenn der Drucker fertig "
+                 "%s\n\n%s\nEin Start ist erst möglich, wenn der Drucker fertig "
                  "und die Platte frei ist.",
                  shown[index].name, blocked);
-        ui_info("Start derzeit nicht moeglich", warning, "Verstanden");
+        ui_info("Start derzeit nicht möglich", warning, "Verstanden");
         return;
     }
 
@@ -144,8 +145,8 @@ static void delete_cb(lv_event_t *e)
              "%s\n\nDie Dateien werden entfernt, vorhandene Statistikwerte bleiben erhalten.",
              shown[index].name);
 
-    ui_confirm("Archiv loeschen?", text,
-               "Behalten", "Loeschen", COL_DANGER,
+    ui_confirm("Archiv löschen?", text,
+               "Behalten", "Löschen", COL_DANGER,
                delete_confirmed, (void *)(intptr_t)shown[index].id);
 }
 
@@ -231,7 +232,7 @@ static void build_row(int index)
     lv_label_set_text(sub, meta);
     lv_obj_set_width(sub, text_w);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(sub, &bb_font_12, 0);
     lv_obj_set_style_text_color(sub,
                                 lv_color_hex(is_starting(item.id) ? COL_OK : COL_MUTED), 0);
     lv_obj_align(sub, LV_ALIGN_TOP_LEFT, 18, 42);
@@ -332,7 +333,7 @@ void archive_screen_create(lv_obj_t *parent)
 
     title_lbl = lv_label_create(parent);
     lv_label_set_text(title_lbl, LV_SYMBOL_SAVE "  Archiv");
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     list_cont = lv_obj_create(parent);
@@ -346,7 +347,7 @@ void archive_screen_create(lv_obj_t *parent)
     lv_obj_set_scroll_dir(list_cont, LV_DIR_VER);
 
     empty_lbl = lv_label_create(parent);
-    lv_label_set_text(empty_lbl, "Keine Archiv-Eintraege gefunden.");
+    lv_label_set_text(empty_lbl, "Keine Archiv-Einträge gefunden.");
     lv_obj_set_style_text_color(empty_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(empty_lbl, LV_ALIGN_CENTER, 0, -20);
 
@@ -370,7 +371,7 @@ void archive_screen_create(lv_obj_t *parent)
     lv_obj_center(next_lbl);
 
     page_lbl = lv_label_create(parent);
-    lv_label_set_text(page_lbl, "0 Eintraege");
+    lv_label_set_text(page_lbl, "0 Einträge");
     lv_obj_set_style_text_color(page_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(page_lbl, LV_ALIGN_BOTTOM_MID, 0, -40);
 
@@ -378,7 +379,7 @@ void archive_screen_create(lv_obj_t *parent)
     lv_label_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -6);
 
     lv_timer_t *timer = lv_timer_create(ui_tick_cb, 500, nullptr);

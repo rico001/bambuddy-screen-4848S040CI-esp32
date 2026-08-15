@@ -10,6 +10,7 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 static lv_obj_t *overlay = nullptr;
 static lv_timer_t *tick = nullptr;
@@ -123,7 +124,7 @@ static void clock_build()
     lv_obj_align(time_lbl, LV_ALIGN_CENTER, 0, -30);
 
     date_lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_font(date_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(date_lbl, &bb_font_24, 0);
     // Heller als sonst: Aus zwei Metern Abstand und bei 30 %
     // Hintergrundbeleuchtung waere das uebliche Grau fuer Nebeninformation
     // kaum noch zu lesen.
@@ -131,7 +132,7 @@ static void clock_build()
     lv_obj_align(date_lbl, LV_ALIGN_CENTER, 0, 34);
 
     printer_lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_font(printer_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(printer_lbl, &bb_font_24, 0);
     lv_obj_set_width(printer_lbl, SCREEN_W - 40);
     lv_label_set_long_mode(printer_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(printer_lbl, LV_TEXT_ALIGN_CENTER, 0);
@@ -246,7 +247,7 @@ static void matrix_build()
         matrix_reset(c);
 
         c.trail = lv_label_create(overlay);
-        lv_obj_set_style_text_font(c.trail, &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_font(c.trail, &bb_font_24, 0);
         lv_obj_set_style_text_color(c.trail, lv_color_hex(0x1F8B3A), 0);
         lv_obj_set_style_text_line_space(c.trail, MATRIX_LINE_H - 24, 0);
         lv_obj_set_x(c.trail, i * MATRIX_COL_W + 4);
@@ -254,7 +255,7 @@ static void matrix_build()
         // Der Kopf ist heller als der Schweif — das ist das, was die
         // Bewegungsrichtung ueberhaupt erkennbar macht.
         c.head = lv_label_create(overlay);
-        lv_obj_set_style_text_font(c.head, &lv_font_montserrat_24, 0);
+        lv_obj_set_style_text_font(c.head, &bb_font_24, 0);
         lv_obj_set_style_text_color(c.head, lv_color_hex(0xD8FFD8), 0);
         lv_obj_set_x(c.head, i * MATRIX_COL_W + 4);
 

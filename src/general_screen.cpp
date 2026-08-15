@@ -13,6 +13,7 @@
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "wifi_screen.h"
+#include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr uint32_t COL_WIFI = 0x00897B;
@@ -49,8 +50,9 @@ static void version_info_cb(lv_event_t *)
 {
     if (ui_confirm_is_open()) return;
 
-    // Nur ASCII: die Montserrat-Schnitte kennen weder Gedankenstrich noch
-    // typografische Anfuehrungszeichen und zeigen dafuer ein leeres Rechteck.
+    // Umlaute und Akzente koennen die Schnitte seit ui_font.h; Gedankenstrich
+    // und typografische Anfuehrungszeichen liegen jenseits von Latin-1 und
+    // wuerden weiterhin als leeres Rechteck erscheinen.
     char text[192];
 
     if (!bambuddy_version_known()) {
@@ -65,7 +67,7 @@ static void version_info_cb(lv_event_t *)
 
     if (bambuddy_version_matches_tested()) {
         int n = snprintf(text, sizeof(text),
-                         "Bambuddy v%s laeuft. Die REST-API entspricht der "
+                         "Bambuddy v%s läuft. Die REST-API entspricht der "
                          "Fassung, gegen die dieses Display gebaut ist.",
                          bambuddy_version_current());
         if (n > 0 && n < (int)sizeof(text) &&
@@ -78,7 +80,7 @@ static void version_info_cb(lv_event_t *)
     }
 
     snprintf(text, sizeof(text),
-             "Bambuddy laeuft mit v%s, gebaut ist dieses Display gegen die "
+             "Bambuddy läuft mit v%s, gebaut ist dieses Display gegen die "
              "REST-API von " BB_TESTED_VERSION ".",
              bambuddy_version_current());
     ui_info("Version weicht ab", text, "OK");
@@ -123,7 +125,7 @@ static void add_version_badge()
     lv_obj_add_event_cb(version_badge, version_badge_delete_cb, LV_EVENT_DELETE, nullptr);
 
     version_badge_label = lv_label_create(version_badge);
-    lv_obj_set_style_text_font(version_badge_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(version_badge_label, &bb_font_24, 0);
     lv_obj_center(version_badge_label);
 
     refresh_version_badge();
@@ -186,19 +188,19 @@ static lv_obj_t *add_launcher(const char *icon, const char *title, const char *s
 
     lv_obj_t *icon_lbl = lv_label_create(btn);
     lv_label_set_text(icon_lbl, icon);
-    lv_obj_set_style_text_font(icon_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(icon_lbl, &bb_font_24, 0);
     lv_obj_align(icon_lbl, LV_ALIGN_LEFT_MID, 4, 0);
 
     lv_obj_t *title_lbl = lv_label_create(btn);
     lv_label_set_text(title_lbl, title);
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, 54, 6);
 
     lv_obj_t *sub_lbl = lv_label_create(btn);
     lv_label_set_text(sub_lbl, subtitle);
     lv_obj_set_width(sub_lbl, SCREEN_W - 2 * PAD - 100);
     lv_label_set_long_mode(sub_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(sub_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(sub_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_opa(sub_lbl, LV_OPA_70, 0);
     lv_obj_align(sub_lbl, LV_ALIGN_TOP_LEFT, 54, 34);
 
@@ -222,7 +224,7 @@ static void add_footer()
     lv_obj_t *lbl = lv_label_create(root);
     lv_label_set_text_fmt(lbl, "Firmware v%s   %s", build_stamp_version(),
                           build_stamp_datetime());
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(lbl, LV_ALIGN_BOTTOM_MID, 0, -PAD);
 }
@@ -233,12 +235,12 @@ static void build_home()
 
     lv_obj_t *title = lv_label_create(root);
     lv_label_set_text(title, LV_SYMBOL_SETTINGS "  System");
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title, &bb_font_16, 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     lv_obj_t *hint = lv_label_create(root);
     lv_label_set_text(hint, "Verbindung und Display verwalten");
-    lv_obj_set_style_text_font(hint, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(hint, &bb_font_12, 0);
     lv_obj_set_style_text_color(hint, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(hint, LV_ALIGN_TOP_LEFT, PAD + 4, 42);
 
