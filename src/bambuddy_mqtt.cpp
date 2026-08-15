@@ -36,14 +36,14 @@ static char subscribed_topic[129] = "";
 static const char *state_text(int state)
 {
     switch (state) {
-    case MQTT_CONNECTION_TIMEOUT:      return "Zeitueberschreitung";
+    case MQTT_CONNECTION_TIMEOUT:      return "Zeitüberschreitung";
     case MQTT_CONNECTION_LOST:         return "Verbindung verloren";
     case MQTT_CONNECT_FAILED:          return "Broker nicht erreichbar";
     case MQTT_DISCONNECTED:            return "getrennt";
     case MQTT_CONNECTED:               return "verbunden";
     case MQTT_CONNECT_BAD_PROTOCOL:    return "Protokoll abgelehnt";
     case MQTT_CONNECT_BAD_CLIENT_ID:   return "Client-ID abgelehnt";
-    case MQTT_CONNECT_UNAVAILABLE:     return "Broker nicht verfuegbar";
+    case MQTT_CONNECT_UNAVAILABLE:     return "Broker nicht verfügbar";
     case MQTT_CONNECT_BAD_CREDENTIALS: return "Benutzer oder Passwort falsch";
     case MQTT_CONNECT_UNAUTHORIZED:    return "Zugriff verweigert";
     default:                           return "unbekannter Fehler";

@@ -653,7 +653,7 @@ static bool reset_slot(const configure_request_t &req)
     const int code = send_post(url, detail, sizeof(detail));
     if (!report_write("reset", code, detail)) return false;
 
-    set_message("Slot zurueckgesetzt");
+    set_message("Slot zurückgesetzt");
     return true;
 }
 

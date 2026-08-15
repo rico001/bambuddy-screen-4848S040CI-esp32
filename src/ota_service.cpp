@@ -106,7 +106,7 @@ static const char PAGE_HEAD[] PROGMEM =
     ".warn{color:#e0a336}"
     "</style></head><body><main>"
     "<h1>Bambuddy Display</h1>"
-    "<p class=\"sub\">Firmware-Update ueber das Netzwerk</p>"
+    "<p class=\"sub\">Firmware-Update über das Netzwerk</p>"
     "<h2>Laufende Firmware</h2><table>";
 
 static const char PAGE_FORM[] PROGMEM =
@@ -118,22 +118,22 @@ static const char PAGE_FORM[] PROGMEM =
     "</form>"
     "<div id=\"bar\"><div id=\"fill\"></div></div>"
     "<p id=\"msg\">Datei <code>firmware.bin</code> aus "
-    "<code>.pio/build/esp32-4848S040CIY1/</code> waehlen.</p>"
-    "<p class=\"warn\">Waehrend des Schreibens flackert das Display und der "
-    "Drucker wird nicht abgefragt. Nach dem letzten Byte startet das Geraet "
+    "<code>.pio/build/esp32-4848S040CIY1/</code> wählen.</p>"
+    "<p class=\"warn\">Während des Schreibens flackert das Display und der "
+    "Drucker wird nicht abgefragt. Nach dem letzten Byte startet das Gerät "
     "von selbst neu.</p>"
     "<script>"
     "var f=document.getElementById('f'),msg=document.getElementById('msg'),"
     "fill=document.getElementById('fill'),go=document.getElementById('go');"
     "f.onsubmit=function(e){e.preventDefault();"
     "var fd=new FormData();fd.append('firmware',document.getElementById('file').files[0]);"
-    "var x=new XMLHttpRequest();go.disabled=true;msg.textContent='Uebertrage ...';"
+    "var x=new XMLHttpRequest();go.disabled=true;msg.textContent='Übertrage ...';"
     "x.upload.onprogress=function(ev){if(!ev.lengthComputable)return;"
     "var p=Math.round(ev.loaded*100/ev.total);fill.style.width=p+'%';"
-    "msg.textContent='Uebertrage ... '+p+' %';};"
+    "msg.textContent='Übertrage ... '+p+' %';};"
     "x.onload=function(){msg.textContent=x.responseText;"
     "if(x.status==200){fill.style.width='100%';"
-    "msg.textContent=x.responseText+' Seite laedt in 20 Sekunden neu.';"
+    "msg.textContent=x.responseText+' Seite lädt in 20 Sekunden neu.';"
     "setTimeout(function(){location.reload();},20000);}else{go.disabled=false;}};"
     "x.onerror=function(){msg.textContent='Verbindung abgebrochen.';go.disabled=false;};"
     "x.open('POST','/update');x.send(fd);};"
@@ -175,19 +175,19 @@ static void handle_root()
     } else {
         snprintf(value, sizeof(value), "%u KB", (unsigned)(sketch / 1024));
     }
-    send_row("Groesse", value);
+    send_row("Größe", value);
 
     snprintf(value, sizeof(value), "%s", running ? running->label : "unbekannt");
     send_row("Aktive Partition", value);
 
     snprintf(value, sizeof(value), "%u KB frei",
              (unsigned)(ESP.getFreeSketchSpace() / 1024));
-    send_row("Platz fuer das Update", value);
+    send_row("Platz für das Update", value);
 
     send_row("Gebaut gegen Bambuddy", BB_TESTED_VERSION);
 
     if (bambuddy_version_known()) {
-        send_row("Instanz laeuft", bambuddy_version_current());
+        send_row("Instanz läuft", bambuddy_version_current());
     }
 
     uptime_text(value, sizeof(value));
@@ -286,7 +286,7 @@ static void handle_upload_done()
 
     server->sendHeader("Connection", "close");
     server->send(200, "text/plain; charset=utf-8",
-                 "Update geschrieben. Das Geraet startet neu.");
+                 "Update geschrieben. Das Gerät startet neu.");
 
     // Nicht sofort neu starten: Die Antwort muss erst ueber die Leitung sein,
     // sonst sieht der Browser nur einen Abbruch und niemand weiss, ob es
@@ -304,7 +304,7 @@ static void server_start()
 
     server = new WebServer(OTA_PORT);
     if (!server) {
-        set_message("Zu wenig Speicher fuer den Webserver");
+        set_message("Zu wenig Speicher für den Webserver");
         Serial.println("[OTA] Webserver konnte nicht angelegt werden");
         return;
     }
@@ -386,7 +386,7 @@ void ota_service_set_enabled(bool on)
     if (ok != pdPASS) {
         ota_task_handle = nullptr;
         enabled = false;
-        set_message("Zu wenig Speicher fuer den Update-Dienst");
+        set_message("Zu wenig Speicher für den Update-Dienst");
         Serial.println("[OTA] Task konnte nicht starten");
     }
 }

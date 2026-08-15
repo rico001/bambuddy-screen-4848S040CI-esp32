@@ -8,6 +8,7 @@
 #include "secrets.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_font.h"
 
 // ============================================================
 // Layout & Farben
@@ -212,7 +213,7 @@ static const char *disconnect_reason_text(uint8_t reason)
     case 202:
     case 204: return "Passwort vermutlich falsch";
     case 203: return "Router hat die Anmeldung abgelehnt";
-    case 0:   return "Zeitueberschreitung";
+    case 0:   return "Zeitüberschreitung";
     default:  return "Verbindung abgebrochen";
     }
 }
@@ -292,7 +293,7 @@ static void enter_state(wifi_state_t new_state)
         lv_obj_add_flag(net_list, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(list_spinner, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(list_hint, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(list_hint, "Kein Netzwerk ausgewaehlt.\nTippe oben auf \"Scannen\".");
+        lv_label_set_text(list_hint, "Kein Netzwerk ausgewählt.\nTippe oben auf \"Scannen\".");
         set_card(COL_MUTED, LV_SYMBOL_CLOSE, "Nicht verbunden", "Offline");
         break;
 
@@ -310,7 +311,7 @@ static void enter_state(wifi_state_t new_state)
         lv_obj_add_flag(list_hint, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(list_spinner, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(net_list, LV_OBJ_FLAG_HIDDEN);
-        set_card(COL_ACCENT, LV_SYMBOL_WIFI, "Netzwerk waehlen",
+        set_card(COL_ACCENT, LV_SYMBOL_WIFI, "Netzwerk wählen",
                  scan_count == 1 ? "1 Netzwerk gefunden" : nullptr);
         if (scan_count != 1) {
             lv_label_set_text_fmt(card_sub, "%d Netzwerke gefunden", scan_count);
@@ -319,7 +320,7 @@ static void enter_state(wifi_state_t new_state)
 
     case WS_PASSWORD:
         show_only(view_password);
-        lv_label_set_text_fmt(pw_ssid_lbl, "Passwort fuer %s", selected_ssid);
+        lv_label_set_text_fmt(pw_ssid_lbl, "Passwort für %s", selected_ssid);
         lv_obj_add_flag(pw_error_lbl, LV_OBJ_FLAG_HIDDEN);
         set_card(COL_ACCENT, LV_SYMBOL_KEYBOARD, "Passwort eingeben",
                  "Leer lassen bei offenen Netzen");
@@ -415,7 +416,7 @@ static void check_connection_cb(lv_timer_t *)
     }
 
     if (connect_ticks >= CONNECT_TIMEOUT_TICKS) {
-        connect_failed("Zeitueberschreitung");
+        connect_failed("Zeitüberschreitung");
     }
 }
 
@@ -559,7 +560,7 @@ static void build_network_row(int idx)
     if (known) {
         lv_obj_t *badge = lv_label_create(row);
         lv_label_set_text(badge, "gespeichert");
-        lv_obj_set_style_text_font(badge, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(badge, &bb_font_12, 0);
         lv_obj_set_style_text_color(badge, lv_color_hex(COL_OK), 0);
         lv_obj_set_style_pad_right(badge, 8, 0);
     }
@@ -567,14 +568,14 @@ static void build_network_row(int idx)
     if (net.secure) {
         lv_obj_t *lock = lv_label_create(row);
         lv_label_set_text(lock, LV_SYMBOL_EYE_CLOSE);
-        lv_obj_set_style_text_font(lock, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(lock, &bb_font_12, 0);
         lv_obj_set_style_text_color(lock, lv_color_hex(COL_MUTED), 0);
         lv_obj_set_style_pad_right(lock, 8, 0);
     }
 
     lv_obj_t *strength = lv_label_create(row);
     lv_label_set_text_fmt(strength, "%d%%", rssi_to_percent(net.rssi));
-    lv_obj_set_style_text_font(strength, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(strength, &bb_font_12, 0);
     lv_obj_set_style_text_color(strength, lv_color_hex(COL_MUTED), 0);
 }
 
@@ -628,7 +629,7 @@ static void scan_poll_cb(lv_timer_t *timer)
         WiFi.scanDelete();
         enter_state(WS_IDLE);
         if (ui_ready) {
-            lv_label_set_text(list_hint, "Keine Netzwerke gefunden.\nNaeher an den Router gehen und erneut scannen.");
+            lv_label_set_text(list_hint, "Keine Netzwerke gefunden.\nNäher an den Router gehen und erneut scannen.");
             set_card(COL_WARN, LV_SYMBOL_WARNING, "Nichts gefunden", "Scan lieferte kein Ergebnis");
         }
         return;
@@ -722,7 +723,7 @@ static void forget_cb(lv_event_t *)
     connected_ssid[0] = '\0';
     selected_ssid[0] = '\0';
     enter_state(WS_IDLE);
-    set_card(COL_MUTED, LV_SYMBOL_TRASH, "Netzwerk vergessen", "Zugangsdaten geloescht");
+    set_card(COL_MUTED, LV_SYMBOL_TRASH, "Netzwerk vergessen", "Zugangsdaten gelöscht");
 }
 
 static void focus_primary_cb(lv_event_t *)
@@ -819,7 +820,7 @@ static void build_status_card(lv_obj_t *parent)
     lv_label_set_text(card_sub, "");
     lv_obj_set_width(card_sub, CONTENT_W - 70);
     lv_label_set_long_mode(card_sub, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(card_sub, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(card_sub, &bb_font_12, 0);
     lv_obj_set_style_text_color(card_sub, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(card_sub, LV_ALIGN_LEFT_MID, 38, 11);
 }
@@ -891,12 +892,12 @@ static void build_password_view(lv_obj_t *parent)
     lv_label_set_text(pw_error_lbl, "");
     lv_obj_set_width(pw_error_lbl, CONTENT_W);
     lv_label_set_long_mode(pw_error_lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_font(pw_error_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(pw_error_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(pw_error_lbl, lv_color_hex(COL_ERR), 0);
     lv_obj_align(pw_error_lbl, LV_ALIGN_TOP_LEFT, 4, 78);
     lv_obj_add_flag(pw_error_lbl, LV_OBJ_FLAG_HIDDEN);
 
-    lv_obj_t *cancel_btn = make_button(view_password, LV_SYMBOL_LEFT "  Zurueck", COL_NEUTRAL, pw_cancel_cb);
+    lv_obj_t *cancel_btn = make_button(view_password, LV_SYMBOL_LEFT "  Zurück", COL_NEUTRAL, pw_cancel_cb);
     lv_obj_set_size(cancel_btn, 150, 46);
     lv_obj_align(cancel_btn, LV_ALIGN_TOP_LEFT, 0, 100);
 
@@ -931,7 +932,7 @@ static void build_connected_view(lv_obj_t *parent)
 
     conn_ssid_lbl = lv_label_create(info);
     lv_label_set_text(conn_ssid_lbl, "");
-    lv_obj_set_style_text_font(conn_ssid_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(conn_ssid_lbl, &bb_font_16, 0);
     lv_obj_set_width(conn_ssid_lbl, CONTENT_W - 30);
     lv_label_set_long_mode(conn_ssid_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(conn_ssid_lbl, LV_ALIGN_TOP_LEFT, 4, 4);

@@ -170,13 +170,13 @@
  *================*/
 #define LV_FONT_MONTSERRAT_8  0
 #define LV_FONT_MONTSERRAT_10 0
-#define LV_FONT_MONTSERRAT_12 1
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_MONTSERRAT_16 0
 #define LV_FONT_MONTSERRAT_18 0
 #define LV_FONT_MONTSERRAT_20 0
 #define LV_FONT_MONTSERRAT_22 0
-#define LV_FONT_MONTSERRAT_24 1
+#define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_26 0
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_30 0
@@ -196,7 +196,12 @@
 #define LV_FONT_UNSCII_8  0
 #define LV_FONT_UNSCII_16 0
 
-#define LV_FONT_DEFAULT &lv_font_montserrat_14
+// Eigene Schnitte statt der eingebauten Montserrat-Fonts: Die mitgelieferten
+// kennen nur ASCII und zeigen fuer Umlaute ein leeres Rechteck. Siehe
+// src/ui_font.h. Groesse 48 (Uhr im Schoner) bleibt eingebaut, dort stehen
+// nur Ziffern.
+#define LV_FONT_CUSTOM_DECLARE LV_FONT_DECLARE(bb_font_12) LV_FONT_DECLARE(bb_font_14) LV_FONT_DECLARE(bb_font_16) LV_FONT_DECLARE(bb_font_24)
+#define LV_FONT_DEFAULT &bb_font_14
 
 #define LV_FONT_FMT_TXT_LARGE 0
 #define LV_USE_FONT_COMPRESSED 0

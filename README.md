@@ -196,6 +196,15 @@ This project primarily talks to Bambuddy through its REST API, with optional MQT
 - LVGL 9.2.2
 - `esp32-smartdisplay`
 
+### Fonts
+
+The built-in LVGL Montserrat faces only cover ASCII, so umlauts and accents —
+in the UI and in file names coming from Bambuddy — rendered as empty boxes.
+`src/fonts/` holds replacements covering Latin-1 (0xA0–0xFF) on top of the
+same glyph set the built-ins use; `src/ui_font.h` documents the
+`lv_font_conv` command that generates them. Anything beyond Latin-1 (Chinese
+model names, em dashes, typographic quotes) still renders as a box.
+
 ### Build
 
 ```bash

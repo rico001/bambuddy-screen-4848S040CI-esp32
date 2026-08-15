@@ -256,16 +256,16 @@ static void do_delete(int32_t archive_id)
 
     const int code = send_code("DELETE", url);
     if (code >= 200 && code < 300) {
-        set_message("Archiv geloescht");
+        set_message("Archiv gelöscht");
         Serial.printf("[Archiv] Eintrag %d geloescht\n", (int)archive_id);
 
         // Nach dem letzten Eintrag einer Folgeseite direkt zur vorherigen
         // Seite wechseln, statt eine leere Seite anzuzeigen.
         if (item_count <= 1 && current_page > 0) current_page--;
     } else if (code == 409) {
-        set_message("Loeschen waehrend Druck nicht moeglich");
+        set_message("Löschen während Druck nicht möglich");
     } else {
-        set_message("Archiv konnte nicht geloescht werden");
+        set_message("Archiv konnte nicht gelöscht werden");
     }
 
     last_fetch_ms = 0;

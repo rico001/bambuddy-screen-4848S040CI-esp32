@@ -19,6 +19,7 @@
 #include "ui_image_view.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 // ============================================================
 // Layout (Hoehe ohne Statusleiste — siehe ui_layout.h)
@@ -263,7 +264,7 @@ static void update_link()
         return;
     }
     if (millis() - beat > 30000) {
-        set_badge(COL_ERR, LV_SYMBOL_WARNING "  Dienst haengt");
+        set_badge(COL_ERR, LV_SYMBOL_WARNING "  Dienst hängt");
         footer_error = "Der Netzwerk-Dienst meldet sich nicht mehr.";
         return;
     }
@@ -813,7 +814,7 @@ static lv_obj_t *muted_label(lv_obj_t *parent, const char *text)
 {
     lv_obj_t *lbl = lv_label_create(parent);
     lv_label_set_text(lbl, text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
     return lbl;
 }
@@ -828,7 +829,7 @@ static void build_header(lv_obj_t *parent)
 
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
-    lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(name_lbl, &bb_font_16, 0);
     // Schmal halten: Rechts stehen drei Sprungknoepfe und die Badge, und der
     // Name darf ihr nicht in die Quere kommen. Zu lange Namen kuerzt LVGL
     // mit Punkten — der Name ist hier die entbehrlichste Angabe.
@@ -894,7 +895,7 @@ static void build_header(lv_obj_t *parent)
 
     badge_lbl = lv_label_create(badge);
     lv_label_set_text(badge_lbl, "...");
-    lv_obj_set_style_text_font(badge_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(badge_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(badge_lbl, lv_color_white(), 0);
     lv_obj_center(badge_lbl);
 }
@@ -951,7 +952,7 @@ static void build_job_card(lv_obj_t *parent)
 
     state_lbl = lv_label_create(card);
     lv_label_set_text(state_lbl, "...");
-    lv_obj_set_style_text_font(state_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(state_lbl, &bb_font_24, 0);
     lv_obj_align(state_lbl, LV_ALIGN_TOP_LEFT, col_x, 12);
 
     job_lbl = muted_label(card, "");
@@ -965,7 +966,7 @@ static void build_job_card(lv_obj_t *parent)
 
     progress_lbl = lv_label_create(card);
     lv_label_set_text(progress_lbl, "");
-    lv_obj_set_style_text_font(progress_lbl, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(progress_lbl, &bb_font_24, 0);
     lv_obj_align(progress_lbl, LV_ALIGN_TOP_LEFT, col_x, 98);
 
     remaining_lbl = lv_label_create(card);
@@ -995,13 +996,13 @@ static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t
 
     lv_obj_t *title_lbl = lv_label_create(card);
     lv_label_set_text(title_lbl, title);
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(title_lbl, lv_color_hex(color), 0);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 7);
 
     lv_obj_t *value = lv_label_create(card);
     lv_label_set_text(value, "");
-    lv_obj_set_style_text_font(value, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(value, &bb_font_24, 0);
     lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 26);
 
     *value_out = value;
@@ -1020,7 +1021,7 @@ static lv_obj_t *control_button(lv_obj_t *parent, int x, const char *symbol,
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text_fmt(lbl, "%s  %s", symbol, text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_center(lbl);
 
     return btn;
@@ -1058,7 +1059,7 @@ void status_screen_create(lv_obj_t *parent)
     ui_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -6);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);

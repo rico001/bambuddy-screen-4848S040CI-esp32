@@ -13,6 +13,7 @@
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
+#include "ui_font.h"
 
 // ============================================================
 // Layout
@@ -98,10 +99,10 @@ static void start_cb(lv_event_t *e)
     if (blocked[0]) {
         char warning[220];
         snprintf(warning, sizeof(warning),
-                 "%s\n\n%s\nEin Start ist erst moeglich, wenn der Drucker fertig "
+                 "%s\n\n%s\nEin Start ist erst möglich, wenn der Drucker fertig "
                  "und die Platte frei ist.",
                  shown[index].name, blocked);
-        ui_info("Start derzeit nicht moeglich", warning, "Verstanden");
+        ui_info("Start derzeit nicht möglich", warning, "Verstanden");
         return;
     }
 
@@ -239,7 +240,7 @@ static void build_row(int index)
     lv_label_set_text(sub, meta);
     lv_obj_set_width(sub, text_w);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(sub, &bb_font_12, 0);
     lv_obj_set_style_text_color(sub,
                                 lv_color_hex(is_starting(item.id) ? COL_OK
                                              : (has_slot ? COL_MUTED : COL_WARN)), 0);
@@ -284,7 +285,7 @@ static void rebuild_list()
     if (total > shown_count) {
         lv_obj_t *more = lv_label_create(list_cont);
         lv_label_set_text_fmt(more, "... und %d weitere", total - shown_count);
-        lv_obj_set_style_text_font(more, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(more, &bb_font_12, 0);
         lv_obj_set_style_text_color(more, lv_color_hex(COL_MUTED), 0);
         lv_obj_set_style_pad_left(more, 18, 0);
         lv_obj_set_style_pad_top(more, 4, 0);
@@ -342,7 +343,7 @@ void queue_screen_create(lv_obj_t *parent)
 
     title_lbl = lv_label_create(parent);
     lv_label_set_text(title_lbl, LV_SYMBOL_LIST "  Warteschlange");
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     list_cont = lv_obj_create(parent);
@@ -356,7 +357,7 @@ void queue_screen_create(lv_obj_t *parent)
     lv_obj_set_scroll_dir(list_cont, LV_DIR_VER);
 
     empty_lbl = lv_label_create(parent);
-    lv_label_set_text(empty_lbl, "Keine Auftraege in der Warteschlange.");
+    lv_label_set_text(empty_lbl, "Keine Aufträge in der Warteschlange.");
     lv_obj_set_style_text_color(empty_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(empty_lbl, LV_ALIGN_CENTER, 0, -20);
 
@@ -364,7 +365,7 @@ void queue_screen_create(lv_obj_t *parent)
     lv_label_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -8);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);

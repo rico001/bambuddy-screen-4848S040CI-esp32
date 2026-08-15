@@ -147,7 +147,7 @@ static void poll_status()
     BambuddyHttp &session = bambuddy_http_shared();
     const char *url = bambuddy_url("/printers/%d/status", bambuddy_printer_id());
     if (!session.begin(url, true)) {
-        set_error(BB_LINK_NO_SERVER, "Ungueltige Server-URL");
+        set_error(BB_LINK_NO_SERVER, "Ungültige Server-URL");
         return;
     }
 
@@ -541,7 +541,7 @@ static bool try_start_task()
 
     if (ok != pdPASS) {
         api_task_handle = nullptr;
-        set_error(BB_LINK_NO_SERVER, "Zu wenig Speicher fuer den Netzwerk-Dienst");
+        set_error(BB_LINK_NO_SERVER, "Zu wenig Speicher für den Netzwerk-Dienst");
         return false;
     }
     return true;
@@ -761,7 +761,7 @@ const char *bambuddy_api_start_blocked_reason()
     if (!state_has_job(state)) return "";
 
     if (strcasecmp(state, "RUNNING") == 0 || strcasecmp(state, "printing") == 0) {
-        return "Es laeuft bereits ein Druck.";
+        return "Es läuft bereits ein Druck.";
     }
     if (strcasecmp(state, "PREPARE") == 0 || strcasecmp(state, "preparing") == 0) {
         return "Der Drucker bereitet gerade einen Druck vor.";
@@ -774,7 +774,7 @@ const char *bambuddy_api_start_blocked_reason()
     // Werte durchreichen statt verschlucken — sonst steht da "nicht bereit"
     // ohne jeden Anhaltspunkt.
     static char reason[64];
-    snprintf(reason, sizeof(reason), "Der Drucker ist beschaeftigt (%s).", state);
+    snprintf(reason, sizeof(reason), "Der Drucker ist beschäftigt (%s).", state);
     return reason;
 }
 
