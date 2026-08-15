@@ -14,7 +14,7 @@
 // Verglichen wird gegen `current_version` aus /updates/check — nur diese
 // Fassung laeuft wirklich. `latest_version` sagt lediglich, ob Rico seine
 // Instanz aktualisieren koennte.
-#define BB_TESTED_VERSION "1.2.5.2"
+#define BB_TESTED_VERSION "1.2.5.3"
 
 // Aus dem Netzwerk-Task aufrufen.
 void bambuddy_version_update();

@@ -216,7 +216,7 @@ pio device monitor
 
 ## Tested With
 
-Tested against a private **Bambuddy v1.2.5.2** instance on a **Bambu Lab P1S v01.10.00.00**.
+Tested against a private **Bambuddy v1.2.5.3** instance on a **Bambu Lab P1S v01.10.00.00**.
 
 ## Project Status
 

@@ -3,8 +3,10 @@
 Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instanz
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
-**Getestet gegen Bambuddy-Version: v1.2.5.2**
-**Letzte Prüfung: 2026-08-08, 14:02 Uhr — unverändert**
+**Getestet gegen Bambuddy-Version: v1.2.5.3**
+**Letzte Prüfung: 2026-08-15, 23:16 Uhr — Instanz auf v1.2.5.3, alle
+genutzten Endpunkte, Parameter und Antwortfelder unverändert; nur die
+Versionsangaben nachgezogen, kein Code angepasst**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -105,13 +107,22 @@ Fehlerantwort mit (siehe unten).
 **Letzte Prüfung: 2026-08-08, 14:02 Uhr — unverändert**
 ```
 
-- `Getestet gegen …` nur ändern, wenn tatsächlich Code angepasst wurde.
+- `Getestet gegen …` auf `current_version` setzen, sobald ein Durchlauf diese
+  Fassung tatsächlich durchgeprüft hat — auch wenn dabei kein Code angepasst
+  werden musste. Die Zeile sagt aus, gegen welche Version geprüft wurde, nicht
+  wann zuletzt etwas kaputt war; bliebe sie stehen, behauptete der
+  System-Screen eine Abweichung, die die Prüfung gerade widerlegt hat.
 - `Letzte Prüfung` **bei jedem Durchlauf** auf Datum **und Uhrzeit** setzen
   (`date '+%Y-%m-%d, %H:%M'`), dahinter das Ergebnis: `unverändert` oder eine
   knappe Zusammenfassung der Anpassungen.
-- Wird `Getestet gegen …` geändert, im selben Zug `BB_TESTED_VERSION` in
-  `src/bambuddy_version.h` mitziehen — daran hängt das Ausrufezeichen im
-  System-Screen.
+- Wird `Getestet gegen …` geändert, **alle drei weiteren Stellen im selben Zug
+  mitziehen** — sonst widersprechen sie einander:
+  1. `BB_TESTED_VERSION` in `src/bambuddy_version.h` (daran hängt das
+     Ausrufezeichen im System-Screen),
+  2. die Überschrift `## Genutzte Endpunkte (Stand vX.Y.Z)` weiter unten,
+  3. `## Tested With` in `README.md` — das ist die einzige Versionsangabe
+     ausserhalb dieser Datei und des Codes und wird deshalb am leichtesten
+     vergessen. Zu finden mit `grep -rn '1\.2\.5' README.md CLAUDE.md src/`.
 
 Ohne diesen Zeitstempel weiß beim nächsten Mal niemand, ob die Prüfung von
 gestern oder von vor einem halben Jahr stammt — und damit auch nicht, wie
@@ -170,7 +181,7 @@ hier nachsehen:
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
 
-## Genutzte Endpunkte (Stand v1.2.5.2)
+## Genutzte Endpunkte (Stand v1.2.5.3)
 
 | Endpunkt | Datei |
 |---|---|
