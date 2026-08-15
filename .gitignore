@@ -3,3 +3,6 @@ akm-feature-mqtt-tls/*
 boards
 include/secrets.h
 bambuddy-docs/selfhosted/*
+# Vom Build erzeugt (pre_build.py)
+src/build_stamp.cpp
+firmware-build/

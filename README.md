@@ -214,6 +214,45 @@ pio run --target upload
 pio device monitor
 ```
 
+### Releases
+
+`version.txt` in the repo root holds the firmware version — a single line,
+e.g. `1.0.1`. It is used twice: `pre_build.py` compiles it into the firmware
+(shown on the update page), and `release.sh` names the released binary after
+it.
+
+```bash
+./release.sh            # copy the current build
+./release.sh --build    # run "pio run" first
+./release.sh --force    # replace an existing file of the same version
+```
+
+The result lands in `firmware-build/`:
+
+```
+firmware-build/bambuddy-display-v1.0.1.bin
+```
+
+The script prints size (including how much of the 1.92 MB OTA partition it
+uses), build time, SHA-256 and the **build id** — the first 8 bytes of the ELF
+hash the IDF embeds into the image. The update page shows the same 8
+characters, which is how you confirm the board is really running the file you
+just uploaded. It refuses to overwrite an existing release of the same version
+and warns when sources are newer than the build.
+
+### Web update (OTA)
+
+Settings → **FIRMWARE** → *Web-Update*. While the switch is on, the device runs
+a small web server on port 80; the row underneath shows the address to open
+(e.g. `http://192.168.1.23`). The page lists the running firmware — version,
+build time, build id, size, active OTA partition, free space — and takes a
+`.bin` from `firmware-build/` (or `firmware.bin` straight out of
+`.pio/build/esp32-4848S040CIY1/`). After the last byte the board reboots into
+the new image.
+
+The switch is off by default and its state survives a restart. While it is on,
+anyone on the same network can flash the device: there is no password.
+
 ## Tested With
 
 Tested against a private **Bambuddy v1.2.5.3** instance on a **Bambu Lab P1S v01.10.00.00**.
@@ -222,7 +261,8 @@ Tested against a private **Bambuddy v1.2.5.3** instance on a **Bambu Lab P1S v01
 
 This is no longer a generic display demo. It is a dedicated **Bambuddy companion display** for Bambu printers.
 
-A sensible next step would be a small web flasher page so the firmware can be installed directly from the browser, similar to WLED or Tasmota.
+Firmware can now be updated from the browser (see *Web update*); the first
+flash still needs USB.
 
 ## Thanks
 

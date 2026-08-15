@@ -4,6 +4,7 @@
 
 #include "bambuddy_hms.h"
 #include "bambuddy_version.h"
+#include "build_stamp.h"
 #include "jog_screen.h"
 #include "settings_screen.h"
 #include "smart_plugs_screen.h"
@@ -207,6 +208,25 @@ static lv_obj_t *add_launcher(const char *icon, const char *title, const char *s
     return btn;
 }
 
+// Fusszeile: welche Fassung laeuft hier gerade?
+//
+// Nach einem Web-Update ist das die erste Frage, und die Update-Seite
+// beantwortet sie nur dem, der einen Browser offen hat. Wer vor dem Geraet
+// steht, sieht es hier — zusammen mit dem Bauzeitpunkt, denn zwei Staende
+// derselben Versionsnummer gibt es beim Entwickeln staendig.
+//
+// Das Ausrufezeichen oben rechts meint etwas anderes: die Fassung der
+// Bambuddy-Instanz. Hier steht die Firmware des Displays selbst.
+static void add_footer()
+{
+    lv_obj_t *lbl = lv_label_create(root);
+    lv_label_set_text_fmt(lbl, "Firmware v%s   %s", build_stamp_version(),
+                          build_stamp_datetime());
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
+    lv_obj_align(lbl, LV_ALIGN_BOTTOM_MID, 0, -PAD);
+}
+
 static void build_home()
 {
     lv_obj_remove_flag(root, LV_OBJ_FLAG_SCROLLABLE);
@@ -229,6 +249,8 @@ static void build_home()
                  COL_WIFI, 68, open_wifi_cb);
     add_launcher(LV_SYMBOL_SETTINGS, "Einstellungen", "Bambuddy, MQTT und Darstellung",
                  COL_SETTINGS, 158, open_settings_cb);
+
+    add_footer();
 }
 
 void general_screen_create(lv_obj_t *parent)
