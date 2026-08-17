@@ -11,6 +11,7 @@
 #include "bambuddy_config.h"
 #include "bambuddy_cover.h"
 #include "bambuddy_queue.h"
+#include "bambuddy_smart_plugs.h"
 #include "printer_icon.h"
 #include "settings_screen.h"
 #include "ui_layout.h"
@@ -66,6 +67,8 @@ static lv_obj_t *progress_bar;
 static lv_obj_t *progress_lbl;
 static lv_obj_t *remaining_lbl;
 static lv_obj_t *queue_lbl;
+
+static lv_obj_t *auto_off_btn;
 
 static lv_obj_t *nozzle_value_lbl;
 static lv_obj_t *bed_value_lbl;
@@ -544,6 +547,47 @@ static void stop_cb(lv_event_t *)
                stop_confirmed, nullptr);
 }
 
+// --- Nach dem Druck ausschalten ------------------------------------------
+
+static void update_auto_off_button()
+{
+    if (!auto_off_btn) return;
+
+    const bool on = bambuddy_auto_off_enabled();
+    // Waehrend der Nachlaufzeit in Warnfarbe: Der Strom faellt gleich, und
+    // wer jetzt noch etwas am Drucker vorhat, soll es sehen.
+    ui_set_bg_color(auto_off_btn,
+                    bambuddy_auto_off_pending() ? COL_WARN
+                                                : (on ? COL_PLUG : COL_NEUTRAL));
+    lv_obj_set_style_opa(auto_off_btn, on ? LV_OPA_COVER : LV_OPA_50, 0);
+}
+
+static void auto_off_confirmed(void *)
+{
+    bambuddy_auto_off_set(true);
+    update_auto_off_button();
+}
+
+// Rueckfrage nur beim Einschalten: Ausschalten der Automatik nimmt niemandem
+// etwas weg, sie einzuschalten dagegen kappt spaeter den Strom — womoeglich,
+// waehrend jemand noch am Drucker steht.
+static void auto_off_cb(lv_event_t *)
+{
+    if (ui_confirm_is_open()) return;
+
+    if (bambuddy_auto_off_enabled()) {
+        bambuddy_auto_off_set(false);
+        update_auto_off_button();
+        return;
+    }
+
+    ui_confirm("Nach Druckende ausschalten?",
+               "Zehn Minuten nach dem Druckende und sobald die Düse unter "
+               "50 °C liegt, schaltet das Display die Steckdose des Druckers "
+               "aus.",
+               "Abbrechen", "Einschalten", COL_PLUG, auto_off_confirmed, nullptr);
+}
+
 static void speed_chosen(int index, void *)
 {
     const int level = index + 1; // Auswahl 0..3 -> Stufe 1..4
@@ -704,6 +748,7 @@ static void ui_tick_cb(lv_timer_t *)
     update_log_button();
     update_cover();
     update_controls();
+    update_auto_off_button();
     update_camera_overlay();
     update_cover_big();
 
@@ -980,6 +1025,27 @@ static void build_job_card(lv_obj_t *parent)
     lv_obj_set_width(queue_lbl, col_w);
     lv_label_set_long_mode(queue_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(queue_lbl, LV_ALIGN_TOP_LEFT, col_x, 166);
+
+    // Nach dem Druck ausschalten. Sitzt in der oberen rechten Ecke der
+    // Auftragskarte und nicht bei den Steuerknoepfen darunter: Es ist keine
+    // Aktion, die jetzt etwas tut, sondern eine Aussage darueber, was nach
+    // diesem Auftrag passieren soll — und daneben steht der Auftrag.
+    auto_off_btn = lv_button_create(card);
+    lv_obj_set_size(auto_off_btn, 36, 36);
+    lv_obj_align(auto_off_btn, LV_ALIGN_TOP_RIGHT, -10, 6);
+    lv_obj_set_style_radius(auto_off_btn, 18, 0);
+    lv_obj_set_style_shadow_width(auto_off_btn, 0, 0);
+    lv_obj_add_event_cb(auto_off_btn, auto_off_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *auto_off_icon = lv_label_create(auto_off_btn);
+    lv_label_set_text(auto_off_icon, BB_SYMBOL_CLOCK);
+    // Grosse Schnittgroesse, damit die Uhr den Knopf fast ausfuellt: Sie ist
+    // hier kein Beiwerk neben einer Beschriftung, sondern die ganze Aussage.
+    lv_obj_set_style_text_font(auto_off_icon, &bb_font_24, 0);
+    lv_obj_set_style_text_color(auto_off_icon, lv_color_white(), 0);
+    lv_obj_center(auto_off_icon);
+
+    update_auto_off_button();
 
     progress_bar = lv_bar_create(card);
     lv_obj_set_size(progress_bar, CONTENT_W - 28, 16);

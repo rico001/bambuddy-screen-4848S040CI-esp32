@@ -449,6 +449,24 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     xSemaphoreGive(log_mutex);
 }
 
+void bambuddy_hms_report_auto_off(const char *plug_name)
+{
+    char text[64];
+    job_text("Strom aus (Auto-Off) nach Druckende", plug_name, text, sizeof(text));
+
+    ensure_ready();
+    xSemaphoreTake(log_mutex, portMAX_DELAY);
+    // Hinweisstufe: Es ist nichts schiefgegangen, aber man will es wissen.
+    add_entry("", text, 4);
+    fresh = true;
+    xSemaphoreGive(log_mutex);
+
+    // Sofort sichern statt auf den ruhigen Moment zu warten: Gleich faellt
+    // der Strom des Druckers, und wenn das Display an derselben Steckdose
+    // haengt, ist der Eintrag sonst weg, bevor er geschrieben wurde.
+    bambuddy_hms_flush_now();
+}
+
 void bambuddy_hms_report_boot(const char *reason, bool unexpected)
 {
     if (!settings_log_boot()) return;

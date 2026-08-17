@@ -177,6 +177,19 @@ hier nachsehen:
   zuerst den Klartext lesen: „ohne Cloud-Zugriff" ist eine Einstellung am
   Schlüssel, „administrative operations" dagegen eine Regel des Servers, an
   der sich nichts drehen lässt.
+- **„Nach dem Druck ausschalten" ist über einen API-Key nicht zu setzen.**
+  Die Dauereinstellung lebt an der Steckdose (`auto_off` in
+  `SmartPlugResponse`), und `PATCH /smart-plugs/{id}` antwortet mit
+  `403 "API keys cannot be used for administrative operations"`. Der
+  Auftragsschalter `auto_off_after` in `PATCH /queue/{id}` ist zwar erlaubt,
+  aber nur solange der Eintrag `pending` ist (`400 "Can only update pending
+  items"`) — und ein am Drucker selbst gestarteter Druck hat gar keinen
+  Eintrag. Das Display macht es deshalb selbst: Zustandswechsel beobachten
+  und `POST /smart-plugs/{id}/control` schicken, was ein Key darf. Welche
+  Dose den Drucker versorgt, beantwortet `GET
+  /smart-plugs/by-printer/{printer_id}` (Feld `controls_printer_power`) —
+  diese Auswahl nicht selbst nachbauen, sie hat in 1.2.5.3 gerade erst einen
+  Fehler behoben bekommen.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
