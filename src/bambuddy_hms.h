@@ -64,6 +64,16 @@ void bambuddy_hms_report_state(const char *state, const char *job);
 // im Protokoll sieht, ob das Geraet nachts von selbst neu gestartet ist.
 void bambuddy_hms_report_boot(const char *reason, bool unexpected);
 
+// Die Abschaltung nach dem Druck vermerken — unmittelbar bevor der Strom
+// faellt. Wer spaeter vor einem ausgeschalteten Drucker steht, findet hier
+// die Antwort auf "wer war das?"; ohne den Eintrag sieht das aus wie ein
+// Stromausfall.
+//
+// Anders als die uebrigen Meldungen haengt dieser Eintrag an keinem Schalter
+// im Einstellungs-Screen: Eine Aktion, die dem Drucker den Strom nimmt, soll
+// sich immer nachlesen lassen. plug_name darf leer sein.
+void bambuddy_hms_report_auto_off(const char *plug_name);
+
 int bambuddy_hms_count();
 
 // index 0 ist der juengste Eintrag.
