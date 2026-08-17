@@ -222,7 +222,7 @@ static lv_obj_t *add_launcher(const char *icon, const char *title, const char *s
 static void add_footer()
 {
     lv_obj_t *lbl = lv_label_create(root);
-    lv_label_set_text_fmt(lbl, "Firmware v%s   %s", build_stamp_version(),
+    lv_label_set_text_fmt(lbl, "v%s, %s", build_stamp_version(),
                           build_stamp_datetime());
     lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);

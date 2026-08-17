@@ -23,7 +23,13 @@ static screensaver_mode_t current_mode = SCREENSAVER_OFF;
 static lv_obj_t *time_lbl = nullptr;
 static lv_obj_t *date_lbl = nullptr;
 static lv_obj_t *printer_lbl = nullptr;
+static lv_obj_t *clock_panel = nullptr; // nur im kombinierten Modus
+static uint32_t clock_border_rgb = 0;   // zuletzt gesetzte Rahmenfarbe
 static int shown_minute = -1;
+
+// Farbe fuer "nichts zu melden": heller als das uebliche Grau, weil der
+// Schoner bei gedaempfter Beleuchtung aus einigen Metern gelesen wird.
+static constexpr uint32_t PRINTER_NEUTRAL_RGB = 0x9AA5AD;
 
 // Wochentage ausgeschrieben statt der englischen Kuerzel von strftime: Das
 // Geraet spricht sonst ueberall Deutsch.
@@ -39,7 +45,7 @@ static const char *const WEEKDAYS[] = {"Sonntag",    "Montag",  "Dienstag", "Mit
 // jener beim Aufwachen seine erste Aktualisierung.
 static void printer_summary(uint32_t *color_out, char *out, size_t out_len)
 {
-    *color_out = 0x9AA5AD;
+    *color_out = PRINTER_NEUTRAL_RGB;
 
     bambuddy_status_t st;
     if (!bambuddy_api_copy_status(&st)) {
@@ -95,6 +101,21 @@ static void clock_refresh_printer()
 
     ui_set_text(printer_lbl, text);
     ui_set_text_color(printer_lbl, color);
+
+    // Im kombinierten Modus faerbt sich der Rahmen der Tafel mit: Aus zwei
+    // Metern Abstand liest niemand die Zeile, aber gruen, gelb oder rot sieht
+    // man im Vorbeigehen. Nur setzen, wenn sich die Farbe wirklich aendert —
+    // jede Stilaenderung macht LVGL sonst schmutzig, und das mitten im Regen.
+    if (!clock_panel) return;
+
+    // Solange der Drucker nichts zu melden hat, bleibt der Rahmen im Gruen des
+    // Regens. Das Grau fuer "unbekannt" waere hier keine Information, sondern
+    // nur ein Bruch im Bild.
+    const uint32_t border = (color == PRINTER_NEUTRAL_RGB) ? 0x1F8B3A : color;
+
+    if (clock_border_rgb == border) return;
+    clock_border_rgb = border;
+    lv_obj_set_style_border_color(clock_panel, lv_color_hex(border), 0);
 }
 
 static void clock_refresh(bool force)
@@ -116,27 +137,78 @@ static void clock_refresh(bool force)
                     tm_now.tm_mday, tm_now.tm_mon + 1, tm_now.tm_year + 1900);
 }
 
-static void clock_build()
-{
-    time_lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_font(time_lbl, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(time_lbl, lv_color_hex(0xE0E0E0), 0);
-    lv_obj_align(time_lbl, LV_ALIGN_CENTER, 0, -30);
+// Wie stark deckt die Tafel? LV_OPA_COVER waere undurchsichtig, kleinere
+// Werte lassen den Regen durchscheinen.
+//
+// Das ist der teuerste Wert in diesem Modus: Durchscheinend heisst, dass die
+// Flaeche bei jedem Schritt einer Spalte darunter neu mit dem Hintergrund
+// verrechnet und die Beschriftungen darauf neu gezeichnet werden muessen —
+// auch die grosse Uhrzeit. Auf diesem Board teilen sich Bildpuffer und Panel
+// eine Speicheranbindung, und zuviel davon wird als Zucken sichtbar.
+//
+// 85 % ist der Kompromiss: Der Regen ist als Andeutung zu erkennen, die
+// Ziffern bleiben ruhig. Wer mehr davon sehen will, geht auf LV_OPA_70
+// herunter — darunter wird die Uhrzeit unruhig zu lesen.
+static constexpr lv_opa_t CLOCK_PANEL_OPA = (lv_opa_t)217; // ~85 %
 
-    date_lbl = lv_label_create(overlay);
-    lv_obj_set_style_text_font(date_lbl, &bb_font_24, 0);
+// Die Tafel fuer den kombinierten Modus: eine Flaeche mitten im Regen, mit
+// gruenem Rahmen.
+static lv_obj_t *clock_panel_build()
+{
+    lv_obj_t *panel = lv_obj_create(overlay);
+    lv_obj_set_size(panel, SCREEN_W - 56, 214);
+    lv_obj_center(panel);
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(panel, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(panel, 18, 0);
+    lv_obj_set_style_pad_all(panel, 0, 0);
+
+    // Nicht schwarz, sondern ein sehr dunkles Gruen: So wirkt die Tafel wie
+    // ein Teil des Regens und nicht wie ein Loch darin.
+    lv_obj_set_style_bg_color(panel, lv_color_hex(0x04120A), 0);
+    lv_obj_set_style_bg_opa(panel, CLOCK_PANEL_OPA, 0);
+    lv_obj_set_style_border_width(panel, 2, 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(0x1F8B3A), 0);
+    lv_obj_set_style_border_opa(panel, LV_OPA_COVER, 0);
+    return panel;
+}
+
+// Uhr, Datum und Druckerzustand. Im kombinierten Modus sitzen sie auf der
+// Tafel und tragen die Farben des Regens; allein stehen sie frei auf
+// Schwarz und bleiben beim gewohnten Weiss-Grau.
+static void clock_build(bool on_panel)
+{
+    lv_obj_t *parent = overlay;
+    uint32_t time_rgb = 0xE0E0E0;
     // Heller als sonst: Aus zwei Metern Abstand und bei 30 %
     // Hintergrundbeleuchtung waere das uebliche Grau fuer Nebeninformation
     // kaum noch zu lesen.
-    lv_obj_set_style_text_color(date_lbl, lv_color_hex(0x9AA5AD), 0);
+    uint32_t date_rgb = PRINTER_NEUTRAL_RGB;
+
+    if (on_panel) {
+        clock_panel = clock_panel_build();
+        clock_border_rgb = 0x1F8B3A;
+        parent = clock_panel;
+        time_rgb = 0xD8FFD8; // dieselbe Farbe wie die Koepfe der Spalten
+        date_rgb = 0x6FBF87;
+    }
+
+    time_lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(time_lbl, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(time_lbl, lv_color_hex(time_rgb), 0);
+    lv_obj_align(time_lbl, LV_ALIGN_CENTER, 0, -30);
+
+    date_lbl = lv_label_create(parent);
+    lv_obj_set_style_text_font(date_lbl, &bb_font_24, 0);
+    lv_obj_set_style_text_color(date_lbl, lv_color_hex(date_rgb), 0);
     lv_obj_align(date_lbl, LV_ALIGN_CENTER, 0, 34);
 
-    printer_lbl = lv_label_create(overlay);
+    printer_lbl = lv_label_create(parent);
     lv_obj_set_style_text_font(printer_lbl, &bb_font_24, 0);
-    lv_obj_set_width(printer_lbl, SCREEN_W - 40);
+    lv_obj_set_width(printer_lbl, (on_panel ? SCREEN_W - 76 : SCREEN_W - 40));
     lv_label_set_long_mode(printer_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(printer_lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(printer_lbl, LV_ALIGN_CENTER, 0, 92);
+    lv_obj_align(printer_lbl, LV_ALIGN_CENTER, 0, on_panel ? 78 : 92);
 
     shown_minute = -1;
     clock_refresh(true);
@@ -159,14 +231,15 @@ static void clock_build()
 
 static constexpr int MATRIX_COLS = 20;
 static constexpr int MATRIX_COL_W = SCREEN_W / MATRIX_COLS; // 24
-static constexpr int MATRIX_LINE_H = 28;                    // montserrat_24
+static constexpr int MATRIX_LINE_H = 28;                    // Rasterhoehe je Zeichen
 static constexpr int MATRIX_ROWS = SCREEN_H / MATRIX_LINE_H + 1;
 static constexpr int MATRIX_TRAIL_MIN = 5;
 static constexpr int MATRIX_TRAIL_MAX = 12;
 static constexpr uint32_t MATRIX_TICK_MS = 110;
 
-// Katakana waere das Original, der eingebaute Zeichensatz kennt aber nur
-// ASCII. Ziffern und Grossbuchstaben kommen dem Bild am naechsten.
+// Katakana waere das Original; so weit reicht der Zeichenvorrat der Schnitte
+// nicht (siehe ui_font.h — Latin-1 endet lange davor). Ziffern und
+// Grossbuchstaben kommen dem Bild am naechsten.
 static const char MATRIX_CHARS[] = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ<>*+=";
 static constexpr int MATRIX_CHAR_COUNT = sizeof(MATRIX_CHARS) - 1;
 
@@ -249,7 +322,15 @@ static void matrix_build()
         c.trail = lv_label_create(overlay);
         lv_obj_set_style_text_font(c.trail, &bb_font_24, 0);
         lv_obj_set_style_text_color(c.trail, lv_color_hex(0x1F8B3A), 0);
-        lv_obj_set_style_text_line_space(c.trail, MATRIX_LINE_H - 24, 0);
+
+        // Zeilenabstand aus der Schrift ableiten, nicht aus ihrer Punktgroesse:
+        // Der Schweif ist ein einziges mehrzeiliges Label, der Kopf ein
+        // eigenes, und beide werden in Schritten von MATRIX_LINE_H gesetzt.
+        // Passt der Abstand im Label nicht dazu, laeuft der Schweif dem Kopf
+        // langsam davon. Die Zeilenhoehe haengt am Zeichenvorrat — mit den
+        // Latin-1-Schnitten aus ui_font.h ist sie eine andere als vorher.
+        lv_obj_set_style_text_line_space(
+            c.trail, MATRIX_LINE_H - lv_font_get_line_height(&bb_font_24), 0);
         lv_obj_set_x(c.trail, i * MATRIX_COL_W + 4);
 
         // Der Kopf ist heller als der Schweif — das ist das, was die
@@ -283,9 +364,26 @@ static void tick_cb(lv_timer_t *)
     if (current_mode == SCREENSAVER_CLOCK) {
         clock_refresh(false);
         clock_refresh_printer();
-    } else if (current_mode == SCREENSAVER_MATRIX) {
-        matrix_tick();
+        return;
     }
+
+    if (current_mode != SCREENSAVER_MATRIX && current_mode != SCREENSAVER_MATRIX_CLOCK) {
+        return;
+    }
+
+    matrix_tick();
+
+    if (!time_lbl) return;
+
+    // Der Takt gehoert dem Regen; die Uhr braucht ihn nicht. Einmal je Sekunde
+    // nachsehen reicht — und geschrieben wird ohnehin nur, wenn sich der Text
+    // geaendert hat (ui_set_text).
+    static uint8_t clock_divider = 0;
+    if (++clock_divider < (1000 / MATRIX_TICK_MS)) return;
+    clock_divider = 0;
+
+    clock_refresh(false);
+    clock_refresh_printer();
 }
 
 static void build(screensaver_mode_t mode)
@@ -305,11 +403,20 @@ static void build(screensaver_mode_t mode)
     // Tipp waeren zwei Gelegenheiten, ihn unterschiedlich zu behandeln.
     lv_obj_remove_flag(overlay, LV_OBJ_FLAG_CLICKABLE);
 
-    if (mode == SCREENSAVER_MATRIX) {
+    if (mode == SCREENSAVER_MATRIX || mode == SCREENSAVER_MATRIX_CLOCK) {
         matrix_build();
+
+        // Nach dem Regen angelegt und damit darueber. Ohne gestellte Uhr
+        // bleibt es beim reinen Regen: Eine erfundene Uhrzeit gross in den
+        // Raum zu leuchten waere schlimmer als gar keine — und anders als bei
+        // der reinen Uhr gibt es hier ja noch etwas zu sehen.
+        if (mode == SCREENSAVER_MATRIX_CLOCK && settings_time_synced()) {
+            clock_build(true);
+        }
+
         tick = lv_timer_create(tick_cb, MATRIX_TICK_MS, nullptr);
     } else {
-        clock_build();
+        clock_build(false);
         tick = lv_timer_create(tick_cb, 1000, nullptr);
     }
     lv_timer_set_repeat_count(tick, -1);
@@ -333,6 +440,8 @@ void screensaver_show(screensaver_mode_t mode)
     time_lbl = nullptr;
     date_lbl = nullptr;
     printer_lbl = nullptr;
+    clock_panel = nullptr;
+    clock_border_rgb = 0;
     memset(columns, 0, sizeof(columns));
     current_mode = mode;
 
@@ -348,6 +457,9 @@ bool screensaver_visible()
 
 bool screensaver_mode_available(screensaver_mode_t mode)
 {
+    // "Matrix + Uhr" steht hier bewusst nicht: Ohne gestellte Zeit faellt nur
+    // die Tafel weg, der Regen bleibt. Die Wahl deshalb abzulehnen und
+    // stattdessen abzuschalten waere weniger, als der Modus zu bieten hat.
     if (mode == SCREENSAVER_CLOCK) return settings_time_synced();
     return mode != SCREENSAVER_OFF;
 }
