@@ -65,13 +65,17 @@ static const char *screen_off_options =
     "Aus\n30 Sekunden\n1 Minute\n5 Minuten\n10 Minuten";
 
 // Bildschirmschoner. "Aus" laesst das Display wie bisher dunkel werden,
-// "Uhr" zeigt Uhrzeit und Druckerzustand, "Matrix" fallende Zeichen. Alles
-// haengt an derselben
-// Untaetigkeitsgrenze wie die Abschaltung — steht die auf "Aus", passiert
-// gar nichts, und der Bildschirm bleibt dauerhaft an.
-static constexpr int SAVER_COUNT = 3;
+// "Uhr" zeigt Uhrzeit und Druckerzustand, "Matrix" fallende Zeichen,
+// "Matrix + Uhr" beides: der Regen im Hintergrund, die Uhr auf einer Tafel
+// davor, deren Rahmen die Farbe des Druckerzustands traegt. Alles haengt an
+// derselben Untaetigkeitsgrenze wie die Abschaltung — steht die auf "Aus",
+// passiert gar nichts, und der Bildschirm bleibt dauerhaft an.
+//
+// Die Reihenfolge entspricht screensaver_mode_t; der Index wird direkt als
+// Modus weitergereicht.
+static constexpr int SAVER_COUNT = 4;
 static constexpr int SAVER_DEFAULT = SCREENSAVER_OFF;
-static const char *saver_options = "Aus\nUhr\nMatrix";
+static const char *saver_options = "Aus\nUhr\nMatrix\nMatrix + Uhr";
 
 // Der Schoner leuchtet gedaempft: hell genug zum Ablesen aus dem Zimmer,
 // dunkel genug, um nicht zu stoeren. Nachts noch einmal deutlich weniger —
