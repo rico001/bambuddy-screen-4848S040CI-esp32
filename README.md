@@ -196,6 +196,20 @@ This project primarily talks to Bambuddy through its REST API, with optional MQT
 - LVGL 9.2.2
 - `esp32-smartdisplay`
 
+### Design system
+
+`src/ui_theme.h` holds the tokens — surface levels, text colours, meaning
+colours (ok / warn / error / accent), plus a spacing and radius scale — in two
+palettes; `ui_theme_set_dark()` picks one at startup. `src/ui_kit.h` builds
+everything from them: cards, tiles, buttons, icon buttons, status pills,
+overline captions, values, rules and progress bars. Screens should reach for
+those instead of styling objects by hand, so a change of look happens in one
+place.
+
+Switching the palette needs a restart — the screens carry their colours in the
+objects, and re-theming at runtime would only repaint what LVGL itself owns.
+The settings switch says so and restarts on confirmation.
+
 ### Fonts
 
 The built-in LVGL Montserrat faces only cover ASCII, so umlauts and accents —

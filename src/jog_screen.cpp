@@ -3,7 +3,9 @@
 #include <Arduino.h>
 
 #include "bambuddy_api.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_font.h"
 
@@ -11,11 +13,11 @@ static constexpr int PAD = 12;
 static constexpr int BUTTON_SIZE = 64;
 static constexpr uint32_t TAP_LOCK_MS = 700;
 
-static constexpr uint32_t COL_BUTTON = 0x30375E;
-static constexpr uint32_t COL_SELECTED = 0x6D4C41;
-static constexpr uint32_t COL_WARN = 0xFFC107;
-static constexpr uint32_t COL_MUTED = 0x8492A0;
-static constexpr uint32_t COL_ERR = 0xE53935;
+// Warn-, Fehler- und Nebenfarbe kommen aus ui_theme.h. Eigen bleiben nur die
+// beiden Flaechen der Richtungsknoepfe: Sie tragen keine Bedeutung, sondern
+// unterscheiden "Knopf" von "gewaehlter Schrittweite".
+static uint32_t &COL_BUTTON = COL_RAISED;
+static uint32_t &COL_SELECTED = COL_JOG;
 
 enum action_t {
     ACTION_X_LEFT,
@@ -150,13 +152,17 @@ static void motion_cb(lv_event_t *event)
     }
 }
 
+// Gewaehlt heisst: farbige Flaeche, schwarze Zahl. Die dunkle Schrift auf dem
+// gesaettigten Grund traegt weiter als ein zweiter Farbton — und die uebrigen
+// Knoepfe bleiben ruhig, damit die Wahl die einzige Farbe in der Reihe ist.
 static void update_step_buttons()
 {
     for (int i = 0; i < 3; i++) {
+        const bool on = (i == selected_step);
         lv_obj_set_style_bg_color(step_buttons[i],
-                                  lv_color_hex(i == selected_step ? COL_SELECTED : 0x171C21), 0);
+                                  lv_color_hex(on ? COL_SELECTED : COL_BUTTON), 0);
         lv_obj_set_style_text_color(step_buttons[i],
-                                    lv_color_hex(i == selected_step ? 0xFF7A1A : COL_MUTED), 0);
+                                    lv_color_hex(on ? COL_BG : COL_MUTED), 0);
     }
 }
 
@@ -230,17 +236,13 @@ void jog_screen_create(lv_obj_t *parent)
     local_message_ms = 0;
     lv_obj_remove_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t *warning_btn = lv_button_create(parent);
-    lv_obj_set_size(warning_btn, 40, 40);
+    lv_obj_t *warning_btn = ui_icon_button(parent, LV_SYMBOL_WARNING, COL_WARN, 40);
     lv_obj_align(warning_btn, LV_ALIGN_TOP_RIGHT, -PAD, 6);
-    lv_obj_set_style_radius(warning_btn, 20, 0);
-    lv_obj_set_style_bg_color(warning_btn, lv_color_hex(COL_WARN), 0);
     lv_obj_add_event_cb(warning_btn, warning_open_cb, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t *warning_icon = lv_label_create(warning_btn);
-    lv_label_set_text(warning_icon, LV_SYMBOL_WARNING);
-    lv_obj_set_style_text_color(warning_icon, lv_color_black(), 0);
-    lv_obj_center(warning_icon);
+    // Dunkle Schrift auf Gelb: Weiss waere darauf kaum zu lesen.
+    lv_obj_set_style_text_color(lv_obj_get_child(warning_btn, 0),
+                                lv_color_hex(COL_BG), 0);
 
     // XY-Kreuz
     motion_button(parent, 112, 80, LV_SYMBOL_UP, ACTION_Y_UP);
@@ -269,7 +271,7 @@ void jog_screen_create(lv_obj_t *parent)
         lv_obj_t *button = lv_button_create(parent);
         lv_obj_set_size(button, 130, 56);
         lv_obj_align(button, LV_ALIGN_TOP_LEFT, 33 + i * 142, 332);
-        lv_obj_set_style_radius(button, 8, 0);
+        lv_obj_set_style_radius(button, RADIUS_CTRL, 0);
         lv_obj_add_event_cb(button, step_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
 
         lv_obj_t *label = lv_label_create(button);

@@ -8,8 +8,12 @@
 #include <time.h>
 
 #include "bambuddy_config.h"
+#include "bambuddy_hms.h"
+#include "bambuddy_smart_plugs.h"
 #include "ota_service.h"
 #include "screensaver.h"
+#include "ui_dialog.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_font.h"
@@ -244,9 +248,13 @@ static void save_settings()
 static void apply_theme()
 {
     lv_display_t *disp = lv_display_get_default();
+    // Die beiden Farben des Themes aus den eigenen Token statt aus LVGLs
+    // Palette: Sonst faerbt das Theme Schalter und Regler in einem Blau, das
+    // neben COL_ACCENT knapp danebenliegt — und knapp daneben faellt mehr auf
+    // als deutlich anders.
     lv_theme_t *th = lv_theme_default_init(disp,
-                                           lv_palette_main(LV_PALETTE_BLUE),
-                                           lv_palette_main(LV_PALETTE_RED),
+                                           lv_color_hex(COL_ACCENT),
+                                           lv_color_hex(COL_ERR),
                                            dark_mode,
                                            LV_FONT_DEFAULT);
     lv_display_set_theme(disp, th);
@@ -413,13 +421,10 @@ static void apply_timezone()
 
 lv_obj_t *settings_add_section(const char *title)
 {
-    lv_obj_t *lbl = lv_label_create(settings_list);
-    lv_label_set_text(lbl, title);
+    lv_obj_t *lbl = ui_overline(settings_list, title);
     lv_obj_set_width(lbl, LV_PCT(100));
-    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
-    lv_obj_set_style_pad_top(lbl, 6, 0);
-    lv_obj_set_style_pad_left(lbl, 4, 0);
+    lv_obj_set_style_pad_top(lbl, GAP_S, 0);
+    lv_obj_set_style_pad_left(lbl, GAP_XS, 0);
     return lbl;
 }
 
@@ -427,10 +432,8 @@ static lv_obj_t *row_base(int height)
 {
     lv_obj_t *row = lv_obj_create(settings_list);
     lv_obj_set_size(row, LV_PCT(100), height);
-    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(row, 10, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_hor(row, 14, 0);
+    ui_card_style(row);
+    lv_obj_set_style_pad_hor(row, GAP_L, 0);
     lv_obj_set_style_pad_ver(row, 0, 0);
     return row;
 }
@@ -801,11 +804,48 @@ static void start_background_services()
 // Callbacks
 // ============================================================
 
+// Farbschema wechseln heisst neu starten.
+//
+// Die Screens tragen ihre Farben seit dem Redesign in den Objekten — Karten,
+// Raender, Pillen. Ein Themenwechsel zur Laufzeit faerbt nur, was LVGL selbst
+// verwaltet, und liesse den Rest im alten Schema stehen. Ein halb umgefaerbter
+// Bildschirm sieht kaputt aus; ein angekuendigter Neustart nicht.
+static void dark_restart_async(void *)
+{
+    // Ausstehende Protokolleintraege sichern, bevor der Strom des Programms
+    // abreisst — derselbe Weg wie beim Neustart-Knopf im System-Screen.
+    bambuddy_hms_flush_now();
+    delay(300);
+    ESP.restart();
+}
+
+static void dark_restart_confirmed(void *)
+{
+    dark_mode = !dark_mode;
+    save_settings();
+
+    // Asynchron: Der Aufruf kommt aus dem Klick-Callback des Dialogs, und der
+    // raeumt sich danach noch selbst ab.
+    lv_async_call(dark_restart_async, nullptr);
+}
+
 static void dark_switch_cb(lv_event_t *)
 {
-    dark_mode = lv_obj_has_state(dark_switch, LV_STATE_CHECKED);
-    apply_theme();
-    save_settings();
+    // Schalter zuruecksetzen: Erst der Neustart macht die Wahl wahr, und bis
+    // dahin soll er nicht das Gegenteil des Sichtbaren behaupten.
+    const bool wanted = lv_obj_has_state(dark_switch, LV_STATE_CHECKED);
+    if (wanted == dark_mode) return;
+
+    if (dark_mode) {
+        lv_obj_add_state(dark_switch, LV_STATE_CHECKED);
+    } else {
+        lv_obj_remove_state(dark_switch, LV_STATE_CHECKED);
+    }
+
+    ui_confirm(wanted ? "Auf dunkel umstellen?" : "Auf hell umstellen?",
+               "Das Farbschema gilt ab dem naechsten Start. Das Display "
+               "startet dazu sofort neu.",
+               "Abbrechen", "Umstellen", COL_ACCENT, dark_restart_confirmed, nullptr);
 }
 
 static void tls_switch_cb(lv_event_t *)
@@ -916,6 +956,10 @@ static void source_switch_cb(lv_event_t *e)
 void settings_apply_saved()
 {
     load_settings();
+
+    // Vor apply_theme(): Die Token in ui_theme.h speisen sowohl die Screens
+    // als auch die beiden Farben, die das LVGL-Theme bekommt.
+    ui_theme_set_dark(dark_mode);
     apply_theme();
     apply_brightness();
     apply_timezone();
@@ -927,6 +971,11 @@ void settings_apply_saved()
     // Einstellungs-Screen seit dem Start nie geoeffnet wurde — sonst waere der
     // Schalter nach jedem Neustart wirkungslos, bis jemand nachsieht.
     ota_service_set_enabled(ota_web);
+
+    // Den Auto-Aus-Schalter hier einmal lesen, aus dem UI-Thread und vor dem
+    // Start des Netzwerk-Tasks: Sonst koennten beide gleichzeitig das erste
+    // Mal ins NVS greifen.
+    (void)bambuddy_auto_off_enabled();
 }
 
 void settings_screen_create(lv_obj_t *parent)

@@ -8,6 +8,7 @@
 
 #include "bambuddy_filament.h"
 #include "ui_layout.h"
+#include "ui_kit.h"
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
@@ -144,14 +145,14 @@ static lv_obj_t *make_dot(lv_obj_t *parent, int x, int y)
     lv_obj_set_style_radius(dot, 7, 0);
     lv_obj_set_style_pad_all(dot, 0, 0);
     lv_obj_set_style_border_width(dot, 1, 0);
-    lv_obj_set_style_border_color(dot, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_border_color(dot, lv_color_hex(COL_LINE), 0);
     return dot;
 }
 
 static void style_button(lv_obj_t *btn, uint32_t color)
 {
     lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
-    lv_obj_set_style_radius(btn, 10, 0);
+    lv_obj_set_style_radius(btn, RADIUS_CTRL, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
 }
 
@@ -210,7 +211,7 @@ static lv_obj_t *make_swatch(lv_obj_t *parent, int w, int h)
     lv_obj_t *swatch = lv_obj_create(parent);
     lv_obj_set_size(swatch, w, h);
     lv_obj_remove_flag(swatch, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(swatch, 10, 0);
+    lv_obj_set_style_radius(swatch, RADIUS_CTRL, 0);
     lv_obj_set_style_pad_all(swatch, 0, 0);
     lv_obj_add_flag(swatch, LV_OBJ_FLAG_CLICKABLE);
     return swatch;
@@ -227,7 +228,7 @@ static void wheel_draw()
     // Neuzeichnen bei jeder Reglerbewegung waere auf diesem Board deutlich
     // sichtbar, weil es dem Panel Speicherbandbreite wegnimmt.
     const int center = WHEEL_SIZE / 2;
-    const lv_color_t bg = lv_color_hex(0x101418);
+    const lv_color_t bg = lv_color_hex(COL_BG);
 
     for (int y = 0; y < WHEEL_SIZE; y++) {
         const int dy = y - center;
@@ -334,7 +335,7 @@ static void wheel_open()
     lv_obj_set_style_radius(wheel_overlay, 0, 0);
     lv_obj_set_style_border_width(wheel_overlay, 0, 0);
     lv_obj_set_style_pad_all(wheel_overlay, 0, 0);
-    lv_obj_set_style_bg_color(wheel_overlay, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(wheel_overlay, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(wheel_overlay, LV_OPA_COVER, 0);
 
     lv_obj_t *title = lv_label_create(wheel_overlay);
@@ -368,9 +369,9 @@ static void wheel_open()
     lv_obj_set_size(wheel_preview, 96, 56);
     lv_obj_align(wheel_preview, LV_ALIGN_TOP_LEFT, PAD, 332);
     lv_obj_remove_flag(wheel_preview, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(wheel_preview, 10, 0);
+    lv_obj_set_style_radius(wheel_preview, RADIUS_CTRL, 0);
     lv_obj_set_style_border_width(wheel_preview, 2, 0);
-    lv_obj_set_style_border_color(wheel_preview, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_border_color(wheel_preview, lv_color_hex(COL_LINE), 0);
     wheel_update_preview();
 
     make_button(wheel_overlay, 150, 56, LV_ALIGN_TOP_LEFT, PAD + 104, 332, COL_NEUTRAL,
@@ -608,10 +609,12 @@ static void rebuild_list()
         lv_obj_t *row = lv_obj_create(list_cont);
         lv_obj_set_size(row, LV_PCT(100), ROW_H);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_radius(row, 10, 0);
-        lv_obj_set_style_pad_all(row, 0, 0);
-        lv_obj_set_style_border_width(row, selected ? 2 : 0, 0);
-        lv_obj_set_style_border_color(row, lv_color_hex(COL_ACCENT), 0);
+        ui_card_style(row);
+        // Gewaehlt heisst: Rand in der Akzentfarbe statt eines zweiten
+        // Flaechentons. Der Rand ist ohnehin da, er wechselt nur die Farbe.
+        lv_obj_set_style_border_width(row, selected ? 2 : 1, 0);
+        lv_obj_set_style_border_color(
+            row, lv_color_hex(selected ? COL_ACCENT : COL_LINE), 0);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_user_data(row, (void *)(intptr_t)i);
         lv_obj_add_event_cb(row, preset_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
@@ -697,7 +700,7 @@ static void update_preview()
 
     char now_temp[24] = "";
     if (current_temp_min > 0 && current_temp_max > 0) {
-        snprintf(now_temp, sizeof(now_temp), "%d-%d C", (int)current_temp_min,
+        snprintf(now_temp, sizeof(now_temp), "%d-%d °C", (int)current_temp_min,
                  (int)current_temp_max);
     }
 
@@ -730,10 +733,10 @@ static void update_preview()
     ui_set_text_color(preview_lbl, COL_ACCENT);
 
     if (now_temp[0]) {
-        ui_set_text_fmt(temp_lbl, "%s " LV_SYMBOL_RIGHT " %d-%d C", now_temp, (int)lo,
+        ui_set_text_fmt(temp_lbl, "%s " LV_SYMBOL_RIGHT " %d-%d °C", now_temp, (int)lo,
                         (int)hi);
     } else {
-        ui_set_text_fmt(temp_lbl, "%d-%d C", (int)lo, (int)hi);
+        ui_set_text_fmt(temp_lbl, "%d-%d °C", (int)lo, (int)hi);
     }
     ui_set_text_color(temp_lbl, COL_ACCENT);
 }
@@ -871,7 +874,7 @@ static void build(const char *slot_label)
     lv_obj_set_style_radius(overlay, 0, 0);
     lv_obj_set_style_border_width(overlay, 0, 0);
     lv_obj_set_style_pad_all(overlay, 0, 0);
-    lv_obj_set_style_bg_color(overlay, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
 
     title_lbl = lv_label_create(overlay);
