@@ -10,6 +10,7 @@
 #include "ui_layout.h"
 #include "ui_dialog.h"
 #include "ui_image_view.h"
+#include "ui_kit.h"
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
@@ -23,7 +24,12 @@ static constexpr int ROW_H = 76;
 static constexpr int PLAY_SIZE = 52;
 static constexpr int DELETE_SIZE = 44;
 
-static constexpr uint32_t COL_DANGER = 0xF44336;
+// Loeschen benutzt dieselbe Fehlerfarbe wie ueberall — ein eigener Rotton
+// dafuer war nur ein zweiter Wert, der beim naechsten Feinschliff vergessen
+// worden waere.
+// Loeschen benutzt dieselbe Fehlerfarbe wie ueberall. Kein constexpr mehr:
+// Die Bedeutungsfarben haengen seit dem hellen Schema an einer Variablen.
+static uint32_t &COL_DANGER = COL_ERR;
 
 static lv_obj_t *title_lbl;
 static lv_obj_t *list_cont;
@@ -186,12 +192,19 @@ static void build_row(int index)
     lv_obj_t *row = lv_obj_create(list_cont);
     lv_obj_set_size(row, LV_PCT(100), ROW_H);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(row, 10, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_hor(row, 12, 0);
+    // Karte statt Streifen: derselbe Radius, derselbe Rand und derselbe
+    // Flaechenton wie ueberall sonst (ui_kit.h). Der feine Rand ist das, was
+    // eine Liste aus Karten von einer Liste aus Farbfeldern unterscheidet.
+    lv_obj_set_style_radius(row, RADIUS_CARD, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(COL_SURFACE), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_color(row, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_border_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_hor(row, GAP_M, 0);
     lv_obj_set_style_pad_ver(row, 0, 0);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(row, lv_color_hex(COL_ACCENT), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(row, lv_color_hex(COL_RAISED), LV_STATE_PRESSED);
     lv_obj_add_event_cb(row, preview_open_cb, LV_EVENT_CLICKED, (void *)(intptr_t)index);
 
     lv_obj_t *stripe = lv_obj_create(row);
@@ -254,7 +267,7 @@ static void build_row(int index)
     lv_obj_t *del = lv_button_create(row);
     lv_obj_set_size(del, DELETE_SIZE, DELETE_SIZE);
     lv_obj_align(del, LV_ALIGN_RIGHT_MID, -(PLAY_SIZE + 8), 0);
-    lv_obj_set_style_radius(del, 10, 0);
+    lv_obj_set_style_radius(del, RADIUS_CTRL, 0);
     lv_obj_set_style_bg_color(del, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(del, delete_cb, LV_EVENT_CLICKED, (void *)(intptr_t)index);
     if (locked) lv_obj_add_state(del, LV_STATE_DISABLED);

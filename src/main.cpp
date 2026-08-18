@@ -17,6 +17,7 @@
 #include "hms_screen.h"
 #include "nav_bar.h"
 #include "ui_fullscreen.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_theme.h"
@@ -163,6 +164,12 @@ void setup()
     // zweites Mal gegeben, direkt darueber.
     lv_obj_set_scrollbar_mode(tileview, LV_SCROLLBAR_MODE_OFF);
 
+    // Grundflaeche des ganzen Geraets. Ohne diese Zeile setzt das Theme von
+    // LVGL seinen eigenen Grauton, und die Karten der Screens schwimmen
+    // darauf statt sich abzuheben.
+    ui_screen_surface(lv_screen_active());
+    ui_screen_surface(tileview);
+
     lv_obj_t *tile1 = lv_tileview_add_tile(tileview, 0, 0, (lv_dir_t)LV_DIR_RIGHT);
     lv_obj_t *tile2 = lv_tileview_add_tile(tileview, 1, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
     lv_obj_t *tile3 = lv_tileview_add_tile(tileview, 2, 0, (lv_dir_t)(LV_DIR_LEFT | LV_DIR_RIGHT));
@@ -171,6 +178,9 @@ void setup()
 
     // AMS liegt links vom Druckerstatus. Der Status bleibt die Startkachel,
     // rechts folgen Warteschlange, Archiv und System.
+    lv_obj_t *const tiles[] = {tile1, tile2, tile3, tile4, tile5};
+    for (lv_obj_t *tile : tiles) ui_screen_surface(tile);
+
     ams_screen_create(tile1);
     status_screen_create(tile2);
     queue_screen_create(tile3);

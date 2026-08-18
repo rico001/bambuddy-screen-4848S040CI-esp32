@@ -6,23 +6,37 @@
 #include "bambuddy_api.h"
 #include "bambuddy_filament.h"
 #include "filament_config_view.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_font.h"
 
 static constexpr int PAD = 12;
 static constexpr int HEADER_H = 48;
-static constexpr int UNIT_H = 164;
 static constexpr int SLOT_GAP = 8;
-static constexpr int SLOT_W = (SCREEN_W - 4 * PAD - 3 * SLOT_GAP) / 4;
 
-static constexpr uint32_t COL_OK = 0x2EAD62;
-static constexpr uint32_t COL_WARN = 0xFFB300;
-static constexpr uint32_t COL_ERR = 0xE53935;
-static constexpr uint32_t COL_ACCENT = 0x2196F3;
-static constexpr uint32_t COL_MUTED = 0x9E9E9E;
-static constexpr uint32_t COL_EMPTY = 0x30363D;
-static constexpr uint32_t COL_BUTTON = 0x546E7A; // wie COL_NEUTRAL im Theme
+// Rechts neben den Faechern steht die Kapsel mit Luftfeuchte und Temperatur.
+// Die Faecher teilen sich den Rest.
+// 54 statt 46: "32 °C" misst in bb_font_16 gut 43 Pixel, dreistellig ueber
+// 52 — mit 46 haette die Gradangabe an den Kanten geklebt. Die acht Pixel
+// gehen von den vier Faechern ab, wo sie niemand vermisst.
+static constexpr int BADGE_W = 54;
+static constexpr int SLOT_W =
+    (SCREEN_W - 4 * PAD - 3 * SLOT_GAP - BADGE_W - SLOT_GAP) / 4;
+
+// Aufbau einer Einheit von oben nach unten: Kopfzeile, Faecher, Schlauch.
+static constexpr int SLOT_Y = 54;   // Oberkante der Faecher
+static constexpr int SPOOL_W = 56;  // Rolle
+static constexpr int SPOOL_H = 68;
+static constexpr int SLOT_H = SPOOL_H + 42; // Rolle plus zweizeilige Beschriftung
+static constexpr int TUBE_DROP = 14;        // Stueck bis zur Sammelschiene
+static constexpr int UNIT_H = SLOT_Y + SLOT_H + TUBE_DROP + 30;
+
+// Bedeutungsfarben kommen aus ui_theme.h. Frueher standen sie hier noch
+// einmal in eigenen Werten — dieselben Namen, leicht andere Toene. Genau das
+// sieht man auf dem Geraet als Stilbruch von Kachel zu Kachel.
+static constexpr uint32_t COL_EMPTY = 0x30363D; // leerer Slot, nur hier
 
 static lv_obj_t *root = nullptr;
 static lv_obj_t *list_cont = nullptr;
@@ -57,6 +71,19 @@ static uint32_t contrast_color(uint32_t color)
     const uint32_t g = (color >> 8) & 0xFF;
     const uint32_t b = color & 0xFF;
     return (r * 299 + g * 587 + b * 114) > 150000 ? 0x111111 : 0xFFFFFF;
+}
+
+// Foerdert der Drucker gerade? Der Schlauch des geladenen Fachs wird dann
+// voll ausgezeichnet, sonst nur angedeutet: Geladen ist das Material auch im
+// Leerlauf, unterwegs ist es nur waehrend eines Drucks.
+static bool state_is_feeding(const char *state)
+{
+    return strcasecmp(state, "RUNNING") == 0 || strcasecmp(state, "PREPARE") == 0;
+}
+
+static bool printer_is_feeding()
+{
+    return state_is_feeding(shown.state);
 }
 
 static bool tray_is_active(const bambuddy_ams_unit_t &unit,
@@ -154,66 +181,75 @@ static void slot_clicked_cb(lv_event_t *e)
     filament_config_open(slot);
 }
 
+// Ein Fach als Spule von der Seite — Rand, farbiger Koerper, Nabe mit
+// Fachnummer — die Bildsprache der Anzeige am Drucker, aber aus
+// LVGL-Objekten: Die Bibliothek zeichnet in diesem Projekt kein SVG, und die
+// Farben kommen ohnehin aus den Druckerdaten.
+//
+// Kein Fuellstandsbalken: Der Drucker meldet "remain" nur mit RFID-Spulen,
+// sonst dauerhaft -1. Ein Balken, der meistens auf null steht, sagt weniger
+// als gar keiner.
 static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot_index)
 {
     const bambuddy_ams_tray_t &tray = unit.trays[slot_index];
     const bool active = tray_is_active(unit, tray);
+    const uint32_t tray_color = tray.exists ? tray.color : COL_EMPTY;
+
+    const int cell_x = PAD + slot_index * (SLOT_W + SLOT_GAP);
 
     lv_obj_t *slot = lv_obj_create(card);
-    lv_obj_set_size(slot, SLOT_W, 94);
-    lv_obj_align(slot, LV_ALIGN_TOP_LEFT, PAD + slot_index * (SLOT_W + SLOT_GAP), 58);
+    lv_obj_set_size(slot, SLOT_W, SLOT_H);
+    lv_obj_align(slot, LV_ALIGN_TOP_LEFT, cell_x, SLOT_Y);
     lv_obj_remove_flag(slot, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(slot, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(slot, slot_clicked_cb, LV_EVENT_CLICKED,
                         (void *)(uintptr_t)(((uint32_t)unit.id << 16) |
                                             ((uint32_t)slot_index & 0xFFFF)));
-    lv_obj_set_style_radius(slot, 12, 0);
+    lv_obj_set_style_radius(slot, RADIUS_CTRL, 0);
     lv_obj_set_style_pad_all(slot, 0, 0);
+    lv_obj_set_style_bg_opa(slot, LV_OPA_TRANSP, 0);
+    // Das gerade foerdernde Fach bekommt den Rahmen — dieselbe Aussage wie
+    // der hervorgehobene Schlauch darunter, nur am anderen Ende.
     lv_obj_set_style_border_width(slot, active ? 2 : 0, 0);
     lv_obj_set_style_border_color(slot, lv_color_hex(COL_ACCENT), 0);
 
-    const uint32_t tray_color = tray.exists ? tray.color : COL_EMPTY;
+    // --- Spule ---
     // Kinder duerfen den Tipp nicht abfangen: lv_obj_create() macht jeden
-    // Behaelter anklickbar, und Punkt, Kern und Balken decken fast die
-    // gesamte Slot-Flaeche ab. Ohne das reagiert nur ein schmaler Streifen.
-    lv_obj_t *dot = lv_obj_create(slot);
-    lv_obj_remove_flag(dot, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(dot, 36, 36);
-    lv_obj_align(dot, LV_ALIGN_TOP_MID, 0, 4);
-    lv_obj_remove_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(dot, 18, 0);
-    lv_obj_set_style_border_width(dot, 3, 0);
-    lv_obj_set_style_border_color(dot, lv_color_hex(contrast_color(tray_color)), 0);
-    lv_obj_set_style_border_opa(dot, LV_OPA_30, 0);
-    lv_obj_set_style_pad_all(dot, 0, 0);
-    lv_obj_set_style_bg_color(dot, lv_color_hex(tray_color), 0);
+    // Behaelter anklickbar, und Rand, Koerper und Nabe decken fast die
+    // gesamte Flaeche ab. Ohne das reagiert nur ein schmaler Streifen.
+    lv_obj_t *rim = lv_obj_create(slot);
+    lv_obj_remove_flag(rim, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(rim, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(rim, SPOOL_W, SPOOL_H);
+    lv_obj_align(rim, LV_ALIGN_TOP_MID, 0, 4);
+    lv_obj_set_style_radius(rim, 14, 0);
+    lv_obj_set_style_border_width(rim, 0, 0);
+    lv_obj_set_style_pad_all(rim, 0, 0);
+    lv_obj_set_style_bg_color(rim, lv_color_hex(COL_RAISED), 0);
 
-    // Farbiger Rollenkörper plus kontrastierender Kern: bleibt auch bei sehr
-    // hellen oder dunklen Filamentfarben klar als Spule erkennbar.
+    lv_obj_t *band = lv_obj_create(rim);
+    lv_obj_remove_flag(band, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(band, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(band, SPOOL_W - 12, SPOOL_H - 14);
+    lv_obj_center(band);
+    lv_obj_set_style_radius(band, 9, 0);
+    lv_obj_set_style_border_width(band, 0, 0);
+    lv_obj_set_style_pad_all(band, 0, 0);
+    lv_obj_set_style_bg_color(band, lv_color_hex(tray_color), 0);
+    if (!tray.exists) lv_obj_set_style_bg_opa(band, LV_OPA_40, 0);
+
+    // Nabe in der Gegenfarbe: Auch eine weisse oder schwarze Spule bleibt so
+    // als Spule erkennbar, und die Fachnummer bleibt lesbar.
     const uint32_t hub_color = contrast_color(tray_color);
-    lv_obj_t *hub = lv_obj_create(dot);
+    lv_obj_t *hub = lv_obj_create(band);
     lv_obj_remove_flag(hub, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(hub, 18, 18);
     lv_obj_remove_flag(hub, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(hub, 9, 0);
+    lv_obj_set_size(hub, 26, 26);
+    lv_obj_center(hub);
+    lv_obj_set_style_radius(hub, 13, 0);
     lv_obj_set_style_border_width(hub, 0, 0);
     lv_obj_set_style_pad_all(hub, 0, 0);
     lv_obj_set_style_bg_color(hub, lv_color_hex(hub_color), 0);
-    lv_obj_center(hub);
-
-    // Ladekreis ueber der Spule, solange nach dem Konfigurieren noch auf die
-    // Rueckmeldung des Druckers gewartet wird. Er liegt bewusst obenauf: Was
-    // darunter steht, ist in dieser Zeit moeglicherweise veraltet.
-    if (bambuddy_filament_slot_pending(unit.id, slot_index)) {
-        lv_obj_t *busy = lv_spinner_create(slot);
-        lv_obj_set_size(busy, 34, 34);
-        lv_obj_align(busy, LV_ALIGN_TOP_MID, 0, 5);
-        lv_obj_remove_flag(busy, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_arc_width(busy, 4, LV_PART_MAIN);
-        lv_obj_set_style_arc_width(busy, 4, LV_PART_INDICATOR);
-        lv_obj_set_style_arc_opa(busy, LV_OPA_20, LV_PART_MAIN);
-        lv_obj_set_style_arc_color(busy, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
-    }
 
     lv_obj_t *number = lv_label_create(hub);
     lv_label_set_text_fmt(number, "%d", slot_index + 1);
@@ -221,6 +257,21 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_obj_set_style_text_color(number, lv_color_hex(contrast_color(hub_color)), 0);
     lv_obj_center(number);
 
+    // Ladekreis ueber der Spule, solange nach dem Konfigurieren noch auf die
+    // Rueckmeldung des Druckers gewartet wird. Er liegt bewusst obenauf: Was
+    // darunter steht, ist in dieser Zeit moeglicherweise veraltet.
+    if (bambuddy_filament_slot_pending(unit.id, slot_index)) {
+        lv_obj_t *busy = lv_spinner_create(slot);
+        lv_obj_set_size(busy, 34, 34);
+        lv_obj_align(busy, LV_ALIGN_TOP_MID, 0, 4 + (SPOOL_H - 34) / 2);
+        lv_obj_remove_flag(busy, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_arc_width(busy, 4, LV_PART_MAIN);
+        lv_obj_set_style_arc_width(busy, 4, LV_PART_INDICATOR);
+        lv_obj_set_style_arc_opa(busy, LV_OPA_20, LV_PART_MAIN);
+        lv_obj_set_style_arc_color(busy, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
+    }
+
+    // --- Beschriftung ---
     char label[48];
     tray_label(unit.id, tray, label, sizeof(label));
 
@@ -234,60 +285,164 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_label_set_long_mode(type, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(type, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(type, &bb_font_12, 0);
-    if (!tray.exists) lv_obj_set_style_text_color(type, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(type, LV_ALIGN_TOP_MID, 0, 44);
+    lv_obj_set_style_text_color(
+        type, lv_color_hex(tray.exists ? COL_TEXT : COL_MUTED), 0);
+    lv_obj_align(type, LV_ALIGN_TOP_MID, 0, SPOOL_H + 8);
 
-    lv_obj_t *remain = lv_bar_create(slot);
-    lv_obj_remove_flag(remain, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(remain, SLOT_W - 16, 7);
-    lv_obj_align(remain, LV_ALIGN_BOTTOM_MID, 0, -7);
-    lv_bar_set_range(remain, 0, 100);
-    lv_bar_set_value(remain, tray.exists ? tray.remain : 0, LV_ANIM_OFF);
-    lv_obj_set_style_radius(remain, 4, LV_PART_MAIN);
-    lv_obj_set_style_radius(remain, 4, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(remain, lv_color_hex(tray_color), LV_PART_INDICATOR);
+    // --- Schlauch ---
+    // Vom Fach nach unten auf die Sammelschiene. Nur waehrend eines Drucks
+    // traegt der Strang des foerdernden Fachs dessen Filamentfarbe — dann
+    // zeigt er, welches Material gerade unterwegs ist. Steht der Drucker,
+    // sind alle Straenge gleich: Geladen ist das Material zwar weiterhin,
+    // aber es bewegt sich nichts, und eine farbige Leitung wuerde das
+    // Gegenteil behaupten.
+    const bool feeding = active && printer_is_feeding();
+    const int width = feeding ? 4 : 2;
+    ui_rule(card, cell_x + SLOT_W / 2 - width / 2, SLOT_Y + SLOT_H, width, TUBE_DROP,
+         feeding ? tray_color : COL_LINE);
+}
+
+// Sammelschiene unter den Faechern samt Abgang zum Werkzeugkopf. Sie gehoert
+// der Einheit, nicht dem einzelnen Fach — deshalb hier und nicht in
+// build_slot().
+static void build_manifold(lv_obj_t *card, int slot_count, int active_index,
+                           uint32_t active_color)
+{
+    const int y = SLOT_Y + SLOT_H + TUBE_DROP;
+    const int first = PAD + SLOT_W / 2;
+    const int last = PAD + (slot_count - 1) * (SLOT_W + SLOT_GAP) + SLOT_W / 2;
+    const int mid = (first + last) / 2;
+
+    if (slot_count > 1) ui_rule(card, first, y, last - first, 2, COL_LINE);
+
+    // Waehrend des Drucks den Weg vom foerdernden Fach bis zum Abgang in
+    // dessen Farbe weiterzeichnen: Der Weg des Materials soll durchgehend
+    // sein, nicht am Knick aufhoeren.
+    const bool feeding = active_index >= 0 && printer_is_feeding();
+
+    if (feeding) {
+        const int from = PAD + active_index * (SLOT_W + SLOT_GAP) + SLOT_W / 2;
+        const int lo = from < mid ? from : mid;
+        const int hi = from < mid ? mid : from;
+        if (hi > lo) ui_rule(card, lo, y, hi - lo, 4, active_color);
+    }
+
+    ui_rule(card, mid - (feeding ? 2 : 1), y, feeding ? 4 : 2, 12,
+         feeding ? active_color : COL_LINE);
+
+    // Abgang: der Stutzen, an dem der Schlauch die Einheit verlaesst. Sein
+    // Kern traegt waehrend des Drucks dieselbe Farbe wie die Leitung — so
+    // endet der Weg nicht an einem grauen Kasten, sondern geht sichtbar
+    // hindurch.
+    lv_obj_t *outlet = lv_obj_create(card);
+    lv_obj_remove_flag(outlet, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(outlet, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(outlet, 26, 14);
+    lv_obj_align(outlet, LV_ALIGN_TOP_LEFT, mid - 13, y + 12);
+    lv_obj_set_style_radius(outlet, 7, 0);
+    lv_obj_set_style_border_width(outlet, 0, 0);
+    lv_obj_set_style_pad_all(outlet, 0, 0);
+    lv_obj_set_style_bg_color(outlet, lv_color_hex(COL_RAISED), 0);
+
+    if (feeding) {
+        lv_obj_t *core = lv_obj_create(outlet);
+        lv_obj_remove_flag(core, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(core, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_size(core, 8, 8);
+        lv_obj_center(core);
+        lv_obj_set_style_radius(core, 4, 0);
+        lv_obj_set_style_border_width(core, 0, 0);
+        lv_obj_set_style_pad_all(core, 0, 0);
+        lv_obj_set_style_bg_color(core, lv_color_hex(active_color), 0);
+    }
+}
+
+// Luftfeuchte und Temperatur als stehende Kapsel, mittig zu den Faechern.
+//
+// Frueher standen beide Werte als Text in der Kopfzeile. Dort waren sie
+// richtig, aber unauffaellig: zwei Zahlen neben dem Namen, die man erst
+// suchen musste. Als Kapsel neben den Spulen sind sie das, was sie sind —
+// der Zustand der Einheit, nicht eine Eigenschaft ihres Namens.
+static void build_badge(lv_obj_t *card, const bambuddy_ams_unit_t &unit)
+{
+    lv_obj_t *badge = lv_obj_create(card);
+    lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(badge, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(badge, BADGE_W, SLOT_H);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -PAD, SLOT_Y);
+    lv_obj_set_style_radius(badge, BADGE_W / 2, 0);
+    lv_obj_set_style_border_width(badge, 0, 0);
+    lv_obj_set_style_pad_all(badge, 0, 0);
+    lv_obj_set_style_bg_color(badge, lv_color_hex(COL_RAISED), 0);
+
+    lv_obj_t *drop = lv_label_create(badge);
+    lv_label_set_text(drop, LV_SYMBOL_TINT);
+    lv_obj_set_style_text_color(drop, lv_color_hex(humidity_color(unit.humidity)), 0);
+    lv_obj_align(drop, LV_ALIGN_TOP_MID, 0, 10);
+
+    lv_obj_t *humidity = lv_label_create(badge);
+    if (unit.humidity >= 0) {
+        lv_label_set_text_fmt(humidity, "%d%%", (int)unit.humidity);
+    } else {
+        lv_label_set_text(humidity, "--");
+    }
+    lv_obj_set_style_text_font(humidity, &bb_font_16, 0);
+    lv_obj_set_style_text_color(humidity, lv_color_hex(COL_TEXT), 0);
+    lv_obj_align(humidity, LV_ALIGN_TOP_MID, 0, 32);
+
+    // Trennlinie statt zweier Kapseln: Es sind zwei Werte derselben Einheit.
+    ui_rule(badge, 8, SLOT_H / 2 + 2, BADGE_W - 16, 1, COL_LINE);
+
+    lv_obj_t *thermo = lv_label_create(badge);
+    lv_label_set_text(thermo, BB_SYMBOL_TEMP);
+    lv_obj_set_style_text_color(thermo, lv_color_hex(COL_MUTED), 0);
+    lv_obj_align(thermo, LV_ALIGN_BOTTOM_MID, 0, -34);
+
+    lv_obj_t *temp = lv_label_create(badge);
+    if (unit.temperature_known) {
+        lv_label_set_text_fmt(temp, "%d °C", (int)(unit.temperature + 0.5f));
+    } else {
+        lv_label_set_text(temp, "--");
+    }
+    lv_obj_set_style_text_font(temp, &bb_font_16, 0);
+    lv_obj_set_style_text_color(temp, lv_color_hex(COL_TEXT), 0);
+    lv_obj_align(temp, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
 static void build_unit(const bambuddy_ams_unit_t &unit)
 {
     lv_obj_t *card = lv_obj_create(list_cont);
     lv_obj_set_size(card, LV_PCT(100), UNIT_H);
-    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(card, 14, 0);
-    lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_pad_all(card, 0, 0);
+    ui_card_style(card);
 
     char name[20];
     unit_name(unit, name, sizeof(name));
     lv_obj_t *name_lbl = lv_label_create(card);
     lv_label_set_text(name_lbl, name);
     lv_obj_set_style_text_font(name_lbl, &bb_font_24, 0);
-    lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, 16, 14);
+    lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
+    lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, GAP_L, 14);
 
-    lv_obj_t *humidity_lbl = lv_label_create(card);
-    if (unit.humidity >= 0) {
-        lv_label_set_text_fmt(humidity_lbl, LV_SYMBOL_TINT " %d%%", (int)unit.humidity);
-    } else {
-        lv_label_set_text(humidity_lbl, LV_SYMBOL_TINT " --");
-    }
-    lv_obj_set_style_text_color(humidity_lbl,
-                                lv_color_hex(humidity_color(unit.humidity)), 0);
-    lv_obj_set_style_text_font(humidity_lbl, &bb_font_16, 0);
-    lv_obj_align(humidity_lbl, LV_ALIGN_TOP_RIGHT, -126, 17);
-
-    lv_obj_t *temp_lbl = lv_label_create(card);
-    if (unit.temperature_known) {
-        const int tenths = (int)(unit.temperature * 10.0f + 0.5f);
-        lv_label_set_text_fmt(temp_lbl, "%d.%d C", tenths / 10, tenths % 10);
-    } else {
-        lv_label_set_text(temp_lbl, "-- C");
-    }
-    lv_obj_set_style_text_color(temp_lbl, lv_color_hex(COL_WARN), 0);
-    lv_obj_set_style_text_font(temp_lbl, &bb_font_16, 0);
-    lv_obj_align(temp_lbl, LV_ALIGN_TOP_RIGHT, -16, 17);
+    build_badge(card, unit);
 
     const int slot_count = unit.is_ht ? (unit.tray_count > 0 ? unit.tray_count : 1)
                                       : BB_AMS_MAX_TRAYS;
+
+    int active_index = -1;
+    for (int i = 0; i < slot_count && i < BB_AMS_MAX_TRAYS; i++) {
+        if (tray_is_active(unit, unit.trays[i])) active_index = i;
+    }
+
+    // Schiene zuerst, Faecher darueber: Die Stutzen der Faecher sollen die
+    // Linie ueberdecken, nicht umgekehrt.
+    const uint32_t active_color =
+        (active_index >= 0 && unit.trays[active_index].exists)
+            ? unit.trays[active_index].color
+            : COL_ACCENT;
+
+    build_manifold(card, slot_count < BB_AMS_MAX_TRAYS ? slot_count : BB_AMS_MAX_TRAYS,
+                   active_index, active_color);
+
     for (int i = 0; i < slot_count && i < BB_AMS_MAX_TRAYS; i++) {
         build_slot(card, unit, i);
     }
@@ -315,8 +470,12 @@ static void rebuild()
 
 static bool ams_changed(const bambuddy_status_t &next)
 {
+    // Der Druckzustand gehoert dazu, seit der Schlauch ihn zeigt: Ohne diese
+    // Zeile bliebe die Zufuhr gedaempft, bis sich zufaellig etwas am AMS
+    // aendert — und der Beginn eines Drucks aendert daran nichts.
     return !have_status || shown.ams_exists != next.ams_exists ||
            shown.ams_count != next.ams_count || shown.tray_now != next.tray_now ||
+           state_is_feeding(shown.state) != state_is_feeding(next.state) ||
            memcmp(shown.ams, next.ams, sizeof(shown.ams)) != 0;
 }
 
@@ -366,8 +525,8 @@ static void build_screen()
     reload_btn = lv_button_create(root);
     lv_obj_set_size(reload_btn, 52, 30);
     lv_obj_align(reload_btn, LV_ALIGN_TOP_RIGHT, -PAD, 8);
-    lv_obj_set_style_radius(reload_btn, 10, 0);
-    lv_obj_set_style_bg_color(reload_btn, lv_color_hex(COL_BUTTON), 0);
+    lv_obj_set_style_radius(reload_btn, RADIUS_CTRL, 0);
+    lv_obj_set_style_bg_color(reload_btn, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(reload_btn, reload_cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *reload_lbl = lv_label_create(reload_btn);

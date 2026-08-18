@@ -316,7 +316,7 @@ static void auto_off_fire()
     char plug_name[40];
     const int32_t plug_id = fetch_printer_plug_id(plug_name, sizeof(plug_name));
     if (plug_id == 0) {
-        set_message("Keine Steckdose fuer den Drucker");
+        set_message("Keine Steckdose für den Drucker");
         return;
     }
 

@@ -7,6 +7,7 @@
 #include "bambuddy_api.h"
 #include "bambuddy_config.h"
 #include "settings_screen.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "ui_util.h"
@@ -22,11 +23,17 @@ static lv_obj_t *source_lbl;
 static lv_obj_t *clock_lbl;
 static lv_timer_t *tick_timer = nullptr;
 
+// Verbunden heisst: unauffaellig.
+//
+// Die Leiste zeigt Dauerzustaende. Ein gruenes "alles gut", das Tag und Nacht
+// leuchtet, gewoehnt man sich in einer Woche ab — und uebersieht dann auch
+// das Rot daneben. Farbe bekommt hier nur, was von der Regel abweicht; im
+// Normalfall steht die Zeile so zurueckhaltend da wie die Uhr rechts.
 static void update_wifi()
 {
     if (WiFi.status() == WL_CONNECTED) {
         ui_set_text_fmt(wifi_lbl, LV_SYMBOL_WIFI " %s", WiFi.SSID().c_str());
-        ui_set_text_color(wifi_lbl, COL_OK);
+        ui_set_text_color(wifi_lbl, COL_MUTED);
     } else {
         ui_set_text(wifi_lbl, LV_SYMBOL_WIFI " kein WLAN");
         ui_set_text_color(wifi_lbl, COL_ERR);
@@ -55,7 +62,7 @@ static void update_source()
     const char *suffix = "";
 
     switch (bambuddy_api_link()) {
-    case BB_LINK_OK:           color = COL_OK;    suffix = "";              break;
+    case BB_LINK_OK:           color = COL_MUTED; suffix = "";              break;
     case BB_LINK_STARTING:     color = COL_MUTED; suffix = " startet";      break;
     case BB_LINK_NO_WIFI:      color = COL_ERR;   suffix = " wartet";       break;
     case BB_LINK_NO_CONFIG:    color = COL_WARN;  suffix = " unkonfiguriert"; break;
@@ -96,11 +103,17 @@ void status_bar_create(lv_obj_t *parent)
     lv_obj_t *bar = lv_obj_create(parent);
     lv_obj_set_size(bar, SCREEN_W, STATUS_BAR_H);
     lv_obj_align(bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_remove_flag(bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(bar, 0, 0);
-    lv_obj_set_style_border_width(bar, 0, 0);
-    lv_obj_set_style_pad_hor(bar, 10, 0);
-    lv_obj_set_style_pad_ver(bar, 0, 0);
+    ui_screen_surface(bar);
+    lv_obj_set_style_pad_hor(bar, GAP_L, 0);
+
+    // Die Leiste sitzt auf demselben Grund wie die Kacheln darunter. Ihre
+    // Grenze zieht eine Haarlinie statt einer eigenen Flaeche — eine zweite
+    // Farbe fuer 26 Pixel Hoehe zerschneidet den Bildschirm optisch mehr,
+    // als sie ordnet.
+    lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_border_color(bar, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_border_opa(bar, LV_OPA_COVER, 0);
 
     wifi_lbl = lv_label_create(bar);
     lv_obj_set_style_text_font(wifi_lbl, &bb_font_12, 0);
