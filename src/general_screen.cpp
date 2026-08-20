@@ -10,6 +10,7 @@
 #include "smart_plugs_screen.h"
 #include "ui_dialog.h"
 #include "ui_fullscreen.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
 #include "wifi_screen.h"
@@ -17,7 +18,7 @@
 
 static constexpr int PAD = 12;
 static constexpr uint32_t COL_WIFI = 0x00897B;
-static constexpr uint32_t COL_SETTINGS = COL_NEUTRAL; // Kachel "Einstellungen"
+static uint32_t &COL_SETTINGS = COL_NEUTRAL; // Kachel "Einstellungen"
 
 static lv_obj_t *root = nullptr;
 
@@ -117,16 +118,13 @@ static void version_timer_cb(lv_timer_t *)
 
 static void add_version_badge()
 {
-    version_badge = lv_button_create(root);
-    lv_obj_set_size(version_badge, 40, 40);
-    lv_obj_align(version_badge, LV_ALIGN_TOP_RIGHT, -PAD - 48, 6);
-    lv_obj_set_style_radius(version_badge, 20, 0);
+    version_badge = ui_icon_button(root, "!", COL_MUTED, 40);
+    lv_obj_align(version_badge, LV_ALIGN_TOP_RIGHT, -(PAD + 48), 6);
     lv_obj_add_event_cb(version_badge, version_info_cb, LV_EVENT_CLICKED, nullptr);
     lv_obj_add_event_cb(version_badge, version_badge_delete_cb, LV_EVENT_DELETE, nullptr);
 
-    version_badge_label = lv_label_create(version_badge);
+    version_badge_label = lv_obj_get_child(version_badge, 0);
     lv_obj_set_style_text_font(version_badge_label, &bb_font_24, 0);
-    lv_obj_center(version_badge_label);
 
     refresh_version_badge();
 }
@@ -163,50 +161,55 @@ static void restart_cb(lv_event_t *)
 
 static void add_restart_button()
 {
-    lv_obj_t *btn = lv_button_create(root);
-    lv_obj_set_size(btn, 40, 40);
+    lv_obj_t *btn = ui_icon_button(root, LV_SYMBOL_REFRESH, COL_ERR, 40);
     lv_obj_align(btn, LV_ALIGN_TOP_RIGHT, -PAD, 6);
-    lv_obj_set_style_radius(btn, 20, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_ERR), 0);
     lv_obj_add_event_cb(btn, restart_cb, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_t *label = lv_label_create(btn);
-    lv_label_set_text(label, LV_SYMBOL_REFRESH);
-    lv_obj_center(label);
 }
 
 static lv_obj_t *add_launcher(const char *icon, const char *title, const char *subtitle,
                               uint32_t color, int y, lv_event_cb_t callback)
 {
+    // Karte statt vollflaechig gefaerbtem Knopf: Zwei grosse Farbflaechen
+    // uebereinander erschlagen die Kachel. Die Farbe steckt jetzt im
+    // Symbolfeld links — sie ordnet weiterhin zu, ohne zu dominieren.
     lv_obj_t *btn = lv_button_create(root);
     lv_obj_set_size(btn, SCREEN_W - 2 * PAD, 82);
     lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y);
-    lv_obj_set_style_radius(btn, 14, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
-    lv_obj_set_style_pad_all(btn, 18, 0);
+    ui_card_style(btn);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(COL_RAISED), LV_STATE_PRESSED);
     lv_obj_add_event_cb(btn, callback, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t *icon_lbl = lv_label_create(btn);
+    lv_obj_t *icon_box = ui_tile(btn, 48, 48);
+    lv_obj_set_style_bg_color(icon_box, lv_color_hex(color), 0);
+    lv_obj_align(icon_box, LV_ALIGN_LEFT_MID, GAP_L, 0);
+
+    lv_obj_t *icon_lbl = lv_label_create(icon_box);
     lv_label_set_text(icon_lbl, icon);
     lv_obj_set_style_text_font(icon_lbl, &bb_font_24, 0);
-    lv_obj_align(icon_lbl, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_set_style_text_color(icon_lbl, lv_color_hex(COL_TEXT), 0);
+    lv_obj_center(icon_lbl);
 
     lv_obj_t *title_lbl = lv_label_create(btn);
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, 54, 6);
+    lv_obj_set_style_text_color(title_lbl, lv_color_hex(COL_TEXT), 0);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, 80, 20);
 
     lv_obj_t *sub_lbl = lv_label_create(btn);
     lv_label_set_text(sub_lbl, subtitle);
-    lv_obj_set_width(sub_lbl, SCREEN_W - 2 * PAD - 100);
+    lv_obj_set_width(sub_lbl, SCREEN_W - 2 * PAD - 120);
     lv_label_set_long_mode(sub_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(sub_lbl, &bb_font_12, 0);
-    lv_obj_set_style_text_opa(sub_lbl, LV_OPA_70, 0);
-    lv_obj_align(sub_lbl, LV_ALIGN_TOP_LEFT, 54, 34);
+    lv_obj_set_style_text_color(sub_lbl, lv_color_hex(COL_MUTED), 0);
+    lv_obj_align(sub_lbl, LV_ALIGN_TOP_LEFT, 80, 46);
 
+    // Derselbe Randabstand wie beim Symbolfeld links: Der Knopf traegt seit
+    // dem Umbau auf den Kartenstil keinen Innenabstand mehr, und der Pfeil
+    // klebte dadurch am Rand.
     lv_obj_t *arrow = lv_label_create(btn);
     lv_label_set_text(arrow, LV_SYMBOL_RIGHT);
-    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_set_style_text_color(arrow, lv_color_hex(COL_MUTED), 0);
+    lv_obj_align(arrow, LV_ALIGN_RIGHT_MID, -GAP_L, 0);
     return btn;
 }
 
@@ -236,6 +239,7 @@ static void build_home()
     lv_obj_t *title = lv_label_create(root);
     lv_label_set_text(title, LV_SYMBOL_SETTINGS "  System");
     lv_obj_set_style_text_font(title, &bb_font_16, 0);
+    lv_obj_set_style_text_color(title, lv_color_hex(COL_TEXT), 0);
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     lv_obj_t *hint = lv_label_create(root);

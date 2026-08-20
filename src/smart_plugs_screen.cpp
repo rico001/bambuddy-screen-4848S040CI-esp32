@@ -5,7 +5,9 @@
 #include "bambuddy_api.h"
 #include "bambuddy_smart_plugs.h"
 #include "ui_dialog.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
+#include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
 #include "ui_font.h"
@@ -13,10 +15,12 @@
 static constexpr int PAD = 12;
 static constexpr int HEADER_H = 54;
 static constexpr int ROW_H = 88;
-static constexpr uint32_t COL_OK = 0x2EAD62;
-static constexpr uint32_t COL_ERR = 0xE53935;
-static constexpr uint32_t COL_ACCENT = 0xFF6D00;
-static constexpr uint32_t COL_MUTED = 0x9E9E9E;
+// Bedeutungsfarben kommen aus ui_theme.h; nur der Kachelakzent ist hier
+// eigen — er gehoert zu den Steckdosen und wird ueberall gleich benutzt.
+// Die Kachelfarbe der Steckdosen. Frueher hiess sie hier COL_ACCENT und
+// verdeckte damit den gleichnamigen Token aus ui_theme.h — wer die Datei
+// las, sah "Akzent" und bekam Orange.
+static uint32_t &COL_PLUG_ACCENT = COL_PLUG;
 
 static lv_obj_t *list_cont = nullptr;
 static lv_obj_t *empty_lbl = nullptr;
@@ -74,21 +78,20 @@ static void build_row(int index)
     lv_obj_t *row = lv_obj_create(list_cont);
     lv_obj_set_size(row, LV_PCT(100), ROW_H);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(row, 12, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_all(row, 12, 0);
+    ui_card_style(row);
+    lv_obj_set_style_pad_all(row, GAP_M, 0);
 
     lv_obj_t *icon_box = lv_obj_create(row);
     lv_obj_set_size(icon_box, 52, 52);
     lv_obj_align(icon_box, LV_ALIGN_LEFT_MID, 0, 0);
     lv_obj_remove_flag(icon_box, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(icon_box, 10, 0);
+    lv_obj_set_style_radius(icon_box, RADIUS_CTRL, 0);
     lv_obj_set_style_border_width(icon_box, 0, 0);
-    lv_obj_set_style_bg_color(icon_box, lv_color_hex(0x5D4037), 0);
+    lv_obj_set_style_bg_color(icon_box, lv_color_hex(COL_RAISED), 0);
 
     lv_obj_t *icon = lv_label_create(icon_box);
     lv_label_set_text(icon, LV_SYMBOL_POWER);
-    lv_obj_set_style_text_color(icon, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_text_color(icon, lv_color_hex(COL_PLUG_ACCENT), 0);
     lv_obj_center(icon);
 
     lv_obj_t *name = lv_label_create(row);
@@ -115,7 +118,7 @@ static void build_row(int index)
     lv_obj_t *button = lv_button_create(row);
     lv_obj_set_size(button, 84, 54);
     lv_obj_align(button, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_radius(button, 10, 0);
+    lv_obj_set_style_radius(button, RADIUS_CTRL, 0);
     lv_obj_set_style_bg_color(button, lv_color_hex(plug.is_on ? COL_ERR : COL_OK), 0);
     lv_obj_add_event_cb(button, control_cb, LV_EVENT_CLICKED, (void *)(intptr_t)index);
     if (!plug.reachable || switching_id == plug.id) {
@@ -197,7 +200,7 @@ void smart_plugs_screen_create(lv_obj_t *parent)
     lv_obj_set_width(message_lbl, SCREEN_W - 2 * PAD);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
-    lv_obj_set_style_text_color(message_lbl, lv_color_hex(COL_ACCENT), 0);
+    lv_obj_set_style_text_color(message_lbl, lv_color_hex(COL_PLUG_ACCENT), 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -5);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);

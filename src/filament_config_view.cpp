@@ -8,6 +8,8 @@
 
 #include "bambuddy_filament.h"
 #include "ui_layout.h"
+#include "ui_color_picker.h"
+#include "ui_kit.h"
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
@@ -60,8 +62,6 @@ static constexpr int MATERIAL_SLOTS = 32;
 static const uint32_t QUICK_COLORS[] = {0x000000, 0xFFFFFF, 0xE53935, 0x43A047, 0x1E88E5};
 static constexpr int QUICK_COLOR_COUNT = sizeof(QUICK_COLORS) / sizeof(QUICK_COLORS[0]);
 
-static constexpr int WHEEL_SIZE = 200;
-static constexpr int WHEEL_RADIUS = 96;
 
 static lv_obj_t *overlay = nullptr;
 static lv_obj_t *title_lbl = nullptr;
@@ -82,15 +82,6 @@ static lv_obj_t *custom_lbl = nullptr;
 static lv_obj_t *apply_btn = nullptr;
 static lv_obj_t *apply_lbl = nullptr;
 static lv_timer_t *ui_timer = nullptr;
-
-static lv_obj_t *wheel_overlay = nullptr;
-static lv_obj_t *wheel_canvas = nullptr;
-static lv_obj_t *wheel_preview = nullptr;
-static lv_obj_t *wheel_slider = nullptr;
-static uint16_t *wheel_buf = nullptr;
-static int wheel_hue = 0;
-static int wheel_sat = 100;
-static int wheel_val = 100;
 
 static int32_t slot_ams_id = 0;
 static int32_t slot_tray_id = 0;
@@ -114,7 +105,6 @@ static void update_apply_state();
 static void update_title();
 static void update_preview();
 static int generic_index_for(const char *material);
-static void wheel_open();
 
 // ============================================================
 // Kleinkram
@@ -144,14 +134,14 @@ static lv_obj_t *make_dot(lv_obj_t *parent, int x, int y)
     lv_obj_set_style_radius(dot, 7, 0);
     lv_obj_set_style_pad_all(dot, 0, 0);
     lv_obj_set_style_border_width(dot, 1, 0);
-    lv_obj_set_style_border_color(dot, lv_color_hex(0x555555), 0);
+    lv_obj_set_style_border_color(dot, lv_color_hex(COL_LINE), 0);
     return dot;
 }
 
 static void style_button(lv_obj_t *btn, uint32_t color)
 {
     lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
-    lv_obj_set_style_radius(btn, 10, 0);
+    lv_obj_set_style_radius(btn, RADIUS_CTRL, 0);
     lv_obj_set_style_border_width(btn, 0, 0);
 }
 
@@ -210,173 +200,10 @@ static lv_obj_t *make_swatch(lv_obj_t *parent, int w, int h)
     lv_obj_t *swatch = lv_obj_create(parent);
     lv_obj_set_size(swatch, w, h);
     lv_obj_remove_flag(swatch, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(swatch, 10, 0);
+    lv_obj_set_style_radius(swatch, RADIUS_CTRL, 0);
     lv_obj_set_style_pad_all(swatch, 0, 0);
     lv_obj_add_flag(swatch, LV_OBJ_FLAG_CLICKABLE);
     return swatch;
-}
-
-// ============================================================
-// Farbrad
-// ============================================================
-
-static void wheel_draw()
-{
-    // Das Rad wird einmal in voller Helligkeit gezeichnet. Der Regler
-    // darunter aendert nur die gewaehlte Farbe, nicht das Bild — ein
-    // Neuzeichnen bei jeder Reglerbewegung waere auf diesem Board deutlich
-    // sichtbar, weil es dem Panel Speicherbandbreite wegnimmt.
-    const int center = WHEEL_SIZE / 2;
-    const lv_color_t bg = lv_color_hex(0x101418);
-
-    for (int y = 0; y < WHEEL_SIZE; y++) {
-        const int dy = y - center;
-        for (int x = 0; x < WHEEL_SIZE; x++) {
-            const int dx = x - center;
-            const float dist = sqrtf((float)(dx * dx + dy * dy));
-
-            if (dist > WHEEL_RADIUS) {
-                lv_canvas_set_px(wheel_canvas, x, y, bg, LV_OPA_COVER);
-                continue;
-            }
-
-            int hue = (int)(atan2f((float)dy, (float)dx) * 180.0f / (float)M_PI);
-            if (hue < 0) hue += 360;
-            const int sat = (int)(dist * 100.0f / WHEEL_RADIUS);
-
-            lv_canvas_set_px(wheel_canvas, x, y, lv_color_hsv_to_rgb((uint16_t)hue,
-                                                                     (uint8_t)sat, 100),
-                             LV_OPA_COVER);
-        }
-    }
-}
-
-static void wheel_update_preview()
-{
-    const uint32_t color = color_from_hsv(wheel_hue, wheel_sat, wheel_val);
-    ui_set_bg_color(wheel_preview, color);
-}
-
-static void wheel_touch_cb(lv_event_t *e)
-{
-    lv_indev_t *indev = lv_indev_active();
-    if (!indev) return;
-
-    lv_point_t point;
-    lv_indev_get_point(indev, &point);
-
-    lv_area_t area;
-    lv_obj_get_coords((lv_obj_t *)lv_event_get_target(e), &area);
-
-    const int dx = point.x - (area.x1 + WHEEL_SIZE / 2);
-    const int dy = point.y - (area.y1 + WHEEL_SIZE / 2);
-    const float dist = sqrtf((float)(dx * dx + dy * dy));
-    if (dist > WHEEL_RADIUS) return;
-
-    int hue = (int)(atan2f((float)dy, (float)dx) * 180.0f / (float)M_PI);
-    if (hue < 0) hue += 360;
-
-    wheel_hue = hue;
-    wheel_sat = (int)(dist * 100.0f / WHEEL_RADIUS);
-    wheel_update_preview();
-}
-
-static void wheel_slider_cb(lv_event_t *e)
-{
-    wheel_val = (int)lv_slider_get_value((lv_obj_t *)lv_event_get_target(e));
-    wheel_update_preview();
-}
-
-static void wheel_close()
-{
-    if (!wheel_overlay) return;
-
-    // Asynchron loeschen: Wir stecken im Klick-Callback eines Kindes.
-    lv_obj_delete_async(wheel_overlay);
-    wheel_overlay = nullptr;
-    wheel_canvas = nullptr;
-    wheel_preview = nullptr;
-    wheel_slider = nullptr;
-}
-
-static void wheel_cancel_cb(lv_event_t *)
-{
-    wheel_close();
-}
-
-static void wheel_ok_cb(lv_event_t *)
-{
-    chosen_color = color_from_hsv(wheel_hue, wheel_sat, wheel_val);
-    selection_touched = true;
-    wheel_close();
-    update_color_row();
-    update_preview();
-}
-
-static void wheel_open()
-{
-    if (wheel_overlay) return;
-
-    if (!wheel_buf) {
-        // 200x200 in RGB565 sind 80 KB — die gehoeren ins PSRAM, der interne
-        // Speicher waere damit zu einem guten Teil belegt.
-        wheel_buf = (uint16_t *)ps_malloc(
-            LV_CANVAS_BUF_SIZE(WHEEL_SIZE, WHEEL_SIZE, 16, LV_DRAW_BUF_STRIDE_ALIGN));
-        if (!wheel_buf) return;
-    }
-
-    ui_watch("farbrad:oeffnen");
-
-    wheel_overlay = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(wheel_overlay, SCREEN_W, SCREEN_H);
-    lv_obj_align(wheel_overlay, LV_ALIGN_TOP_LEFT, 0, 0);
-    lv_obj_remove_flag(wheel_overlay, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(wheel_overlay, 0, 0);
-    lv_obj_set_style_border_width(wheel_overlay, 0, 0);
-    lv_obj_set_style_pad_all(wheel_overlay, 0, 0);
-    lv_obj_set_style_bg_color(wheel_overlay, lv_color_hex(0x101418), 0);
-    lv_obj_set_style_bg_opa(wheel_overlay, LV_OPA_COVER, 0);
-
-    lv_obj_t *title = lv_label_create(wheel_overlay);
-    lv_label_set_text(title, "Eigene Farbe");
-    lv_obj_set_style_text_font(title, &bb_font_16, 0);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 14);
-
-    wheel_canvas = lv_canvas_create(wheel_overlay);
-    lv_canvas_set_buffer(wheel_canvas, wheel_buf, WHEEL_SIZE, WHEEL_SIZE,
-                         LV_COLOR_FORMAT_RGB565);
-    lv_obj_set_size(wheel_canvas, WHEEL_SIZE, WHEEL_SIZE);
-    lv_obj_align(wheel_canvas, LV_ALIGN_TOP_MID, 0, 48);
-    lv_obj_add_flag(wheel_canvas, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(wheel_canvas, wheel_touch_cb, LV_EVENT_PRESSING, nullptr);
-    lv_obj_add_event_cb(wheel_canvas, wheel_touch_cb, LV_EVENT_CLICKED, nullptr);
-    wheel_draw();
-
-    lv_obj_t *slider_lbl = lv_label_create(wheel_overlay);
-    lv_label_set_text(slider_lbl, "Helligkeit");
-    lv_obj_set_style_text_color(slider_lbl, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(slider_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 266);
-
-    wheel_slider = lv_slider_create(wheel_overlay);
-    lv_obj_set_size(wheel_slider, CONTENT_W - 8, 16);
-    lv_obj_align(wheel_slider, LV_ALIGN_TOP_MID, 0, 292);
-    lv_slider_set_range(wheel_slider, 10, 100);
-    lv_slider_set_value(wheel_slider, wheel_val, LV_ANIM_OFF);
-    lv_obj_add_event_cb(wheel_slider, wheel_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
-
-    wheel_preview = lv_obj_create(wheel_overlay);
-    lv_obj_set_size(wheel_preview, 96, 56);
-    lv_obj_align(wheel_preview, LV_ALIGN_TOP_LEFT, PAD, 332);
-    lv_obj_remove_flag(wheel_preview, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(wheel_preview, 10, 0);
-    lv_obj_set_style_border_width(wheel_preview, 2, 0);
-    lv_obj_set_style_border_color(wheel_preview, lv_color_hex(0x555555), 0);
-    wheel_update_preview();
-
-    make_button(wheel_overlay, 150, 56, LV_ALIGN_TOP_LEFT, PAD + 104, 332, COL_NEUTRAL,
-                "Abbrechen", wheel_cancel_cb);
-    make_button(wheel_overlay, CONTENT_W - 104 - 158, 56, LV_ALIGN_TOP_RIGHT, -PAD, 332,
-                COL_OK, "Übernehmen", wheel_ok_cb);
 }
 
 // ============================================================
@@ -391,9 +218,18 @@ static void quick_color_cb(lv_event_t *e)
     update_preview();
 }
 
+// Der Rueckruf des Farbwaehlers: Er kommt nur bei "Uebernehmen".
+static void color_picked(uint32_t rgb, void *)
+{
+    chosen_color = rgb;
+    selection_touched = true;
+    update_color_row();
+    update_preview();
+}
+
 static void custom_color_cb(lv_event_t *)
 {
-    wheel_open();
+    ui_color_picker_open("Eigene Farbe", chosen_color, color_picked, nullptr);
 }
 
 static void update_color_row()
@@ -608,10 +444,12 @@ static void rebuild_list()
         lv_obj_t *row = lv_obj_create(list_cont);
         lv_obj_set_size(row, LV_PCT(100), ROW_H);
         lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_radius(row, 10, 0);
-        lv_obj_set_style_pad_all(row, 0, 0);
-        lv_obj_set_style_border_width(row, selected ? 2 : 0, 0);
-        lv_obj_set_style_border_color(row, lv_color_hex(COL_ACCENT), 0);
+        ui_card_style(row);
+        // Gewaehlt heisst: Rand in der Akzentfarbe statt eines zweiten
+        // Flaechentons. Der Rand ist ohnehin da, er wechselt nur die Farbe.
+        lv_obj_set_style_border_width(row, selected ? 2 : 1, 0);
+        lv_obj_set_style_border_color(
+            row, lv_color_hex(selected ? COL_ACCENT : COL_LINE), 0);
         lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_user_data(row, (void *)(intptr_t)i);
         lv_obj_add_event_cb(row, preset_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
@@ -697,7 +535,7 @@ static void update_preview()
 
     char now_temp[24] = "";
     if (current_temp_min > 0 && current_temp_max > 0) {
-        snprintf(now_temp, sizeof(now_temp), "%d-%d C", (int)current_temp_min,
+        snprintf(now_temp, sizeof(now_temp), "%d-%d °C", (int)current_temp_min,
                  (int)current_temp_max);
     }
 
@@ -730,10 +568,10 @@ static void update_preview()
     ui_set_text_color(preview_lbl, COL_ACCENT);
 
     if (now_temp[0]) {
-        ui_set_text_fmt(temp_lbl, "%s " LV_SYMBOL_RIGHT " %d-%d C", now_temp, (int)lo,
+        ui_set_text_fmt(temp_lbl, "%s " LV_SYMBOL_RIGHT " %d-%d °C", now_temp, (int)lo,
                         (int)hi);
     } else {
-        ui_set_text_fmt(temp_lbl, "%d-%d C", (int)lo, (int)hi);
+        ui_set_text_fmt(temp_lbl, "%d-%d °C", (int)lo, (int)hi);
     }
     ui_set_text_color(temp_lbl, COL_ACCENT);
 }
@@ -759,7 +597,7 @@ static void close_view()
         lv_timer_delete(ui_timer);
         ui_timer = nullptr;
     }
-    wheel_close();
+    ui_color_picker_close();
 
     lv_obj_delete_async(overlay);
     overlay = nullptr;
@@ -871,13 +709,16 @@ static void build(const char *slot_label)
     lv_obj_set_style_radius(overlay, 0, 0);
     lv_obj_set_style_border_width(overlay, 0, 0);
     lv_obj_set_style_pad_all(overlay, 0, 0);
-    lv_obj_set_style_bg_color(overlay, lv_color_hex(0x101418), 0);
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(COL_BG), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
 
     title_lbl = lv_label_create(overlay);
     lv_label_set_text(title_lbl, slot_label);
     lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
-    lv_obj_set_width(title_lbl, SCREEN_W - (PAD + 4) - (44 + PAD) - 8);
+    // Die Breite hing am Schliessknopf, der rechts daneben sass. Den gibt es
+    // nicht mehr — Abbrechen unten tut dasselbe —, also darf der Titel bis
+    // zum Rand laufen.
+    lv_obj_set_width(title_lbl, CONTENT_W - 8);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 8);
 
@@ -901,9 +742,6 @@ static void build(const char *slot_label)
     temp_caption = make_caption(overlay, "Temp", PAD + 4, TEMP_LINE_Y);
     temp_lbl = make_value(overlay, PAD + 52, TEMP_LINE_Y,
                           SCREEN_W - (PAD + 52) - PAD - 8);
-
-    make_button(overlay, 44, HEADER_H - 8, LV_ALIGN_TOP_RIGHT, -PAD, 4, COL_NEUTRAL,
-                LV_SYMBOL_CLOSE, close_cb);
 
     // Materialfilter: 86 integrierte Profile sind sonst nur mit langem
     // Wischen erreichbar.

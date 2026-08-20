@@ -6,6 +6,7 @@
 #include "bambuddy_hms.h"
 #include "ui_dialog.h"
 #include "ui_layout.h"
+#include "ui_kit.h"
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_font.h"
@@ -81,9 +82,7 @@ static void build_row(const bambuddy_hms_entry_t &e)
     lv_obj_set_size(row, LV_PCT(100), ROW_H);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(row, 10, 0);
-    lv_obj_set_style_pad_all(row, 0, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
+    ui_card_style(row);
 
     // Schmaler Streifen links statt eines farbigen Hintergrunds: Zehn bunte
     // Flaechen uebereinander liest niemand mehr.
@@ -206,7 +205,7 @@ void hms_screen_create(lv_obj_t *parent)
     lv_obj_t *clear_btn = lv_button_create(parent);
     lv_obj_set_size(clear_btn, 96, 38);
     lv_obj_align(clear_btn, LV_ALIGN_TOP_RIGHT, -PAD, 7);
-    lv_obj_set_style_radius(clear_btn, 10, 0);
+    lv_obj_set_style_radius(clear_btn, RADIUS_CTRL, 0);
     lv_obj_set_style_bg_color(clear_btn, lv_color_hex(COL_ERR), 0);
     lv_obj_add_event_cb(clear_btn, clear_cb, LV_EVENT_CLICKED, nullptr);
 
