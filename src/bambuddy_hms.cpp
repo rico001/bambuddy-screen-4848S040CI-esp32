@@ -38,12 +38,12 @@ static const hms_text_t HMS_TEXTS[] = {
     {"8030", "Filament aufgebraucht - Druck pausiert"},
     {"0300_8004", "Filament leer - bitte neu einlegen"},
     {"0300_4008", "AMS-Filamentwechsel fehlgeschlagen"},
-    {"0700_8010", "AMS-Motor ueberlastet - Filament verheddert oder Spule klemmt"},
-    {"0700_8007", "Extrudieren fehlgeschlagen - Extruder moeglicherweise verstopft"},
+    {"0700_8010", "AMS-Motor überlastet - Filament verheddert oder Spule klemmt"},
+    {"0700_8007", "Extrudieren fehlgeschlagen - Extruder möglicherweise verstopft"},
 
     // Duese und Bett
-    {"0300_4006", "Duese verstopft"},
-    {"0300_8016", "Duese mit Filament verstopft - Druck abbrechen und reinigen"},
+    {"0300_4006", "Düse verstopft"},
+    {"0300_8016", "Düse mit Filament verstopft - Druck abbrechen und reinigen"},
     {"0300_4002", "Bettnivellierung fehlgeschlagen - Druck gestoppt"},
 
     // Druck gestoppt oder pausiert
@@ -447,6 +447,24 @@ void bambuddy_hms_report_state(const char *state, const char *job)
     add_entry("", text, failed ? 2 : (started ? 4 : BB_HMS_SEVERITY_OK));
     fresh = true;
     xSemaphoreGive(log_mutex);
+}
+
+void bambuddy_hms_report_auto_off(const char *plug_name)
+{
+    char text[64];
+    job_text("Strom aus (Auto-Off) nach Druckende", plug_name, text, sizeof(text));
+
+    ensure_ready();
+    xSemaphoreTake(log_mutex, portMAX_DELAY);
+    // Hinweisstufe: Es ist nichts schiefgegangen, aber man will es wissen.
+    add_entry("", text, 4);
+    fresh = true;
+    xSemaphoreGive(log_mutex);
+
+    // Sofort sichern statt auf den ruhigen Moment zu warten: Gleich faellt
+    // der Strom des Druckers, und wenn das Display an derselben Steckdose
+    // haengt, ist der Eintrag sonst weg, bevor er geschrieben wurde.
+    bambuddy_hms_flush_now();
 }
 
 void bambuddy_hms_report_boot(const char *reason, bool unexpected)

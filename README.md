@@ -17,7 +17,7 @@ ESP32-S3 touchscreen companion for **Bambuddy** and **Bambu Lab** printers, buil
 **Powered by Bambuddy**
 
 <p>
-  <img src="docs/1000020755.jpg" alt="Bambuddy display next to Bambu Studio showing printer status" width="100%">
+  <img src="docs/bambuddy-und-bambuddy-screen.jpg" alt="Bambuddy display next to Bambu Studio showing printer status" width="100%">
 </p>
 
 ## What is this?
@@ -56,33 +56,58 @@ If you mean that square ESP32 touchscreen board with USB-C: yes, this is the one
 
 ## Gallery
 
-### Bambuddy and Bambuddy Screen in Action
+### The interface
+
+All shots are taken straight from the device
 
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/1000020759.jpg" alt="Queue view on the Bambuddy display" width="100%">
+      <img src="docs/screen-status.png" alt="Status view with printer state, temperatures and controls" width="100%">
+      <br><sub>Status</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/1000020763.jpg" alt="Smart plug controls on the Bambuddy display" width="100%">
+      <img src="docs/screen-ams.png" alt="AMS view with four spools, humidity and temperature" width="100%">
+      <br><sub>AMS</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/1000020761.jpg" alt="Bambuddy display during printing" width="100%">
+      <img src="docs/screen-archiv.png" alt="Archive list with reprint and delete actions" width="100%">
+      <br><sub>Archive</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/1000020762.jpg" alt="Close-up of the Bambuddy display interface" width="100%">
+      <img src="docs/screen-system.png" alt="System tile with Wi-Fi and settings" width="100%">
+      <br><sub>System</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screen-einstellungen.png" alt="Settings list with dark mode, screen timeout and screensaver" width="100%">
+      <br><sub>Settings</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screen-smart-plugs.png" alt="Smart plug controls" width="100%">
+      <br><sub>Smart plugs</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screen-jog.png" alt="Jog controls for X, Y, Z and extruder" width="100%">
+      <br><sub>Jog</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screen-bildschirmschoner.png" alt="Screensaver with falling characters and a clock panel" width="100%">
+      <br><sub>Screensaver</sub>
     </td>
   </tr>
   <tr>
     <td align="center" colspan="2">
-      <img src="docs/1000020757.jpg" alt="Main printer status view on the Bambuddy display" width="60%">
+      <img src="docs/screen-dialog.png" alt="Confirmation dialog asking whether to switch the printer off after the print" width="50%">
+      <br><sub>Auto-off</sub>
     </td>
   </tr>
 </table>
-
-More photos are available in [`docs/`](docs/).
 
 ## Get Started
 
@@ -115,8 +140,8 @@ Then fill in `include/secrets.h` with:
 - `BAMBUDDY_DEFAULT_URL`
 - `BAMBUDDY_DEFAULT_API_KEY`
 - `BAMBUDDY_DEFAULT_PRINTER_ID`
-- optional camera token
-- optional MQTT credentials
+- optional camera token (recommended)
+- optional MQTT credentials (recommended)
 
 The API key can be created directly in Bambuddy under **Settings -> API Keys**.
 
@@ -196,6 +221,29 @@ This project primarily talks to Bambuddy through its REST API, with optional MQT
 - LVGL 9.2.2
 - `esp32-smartdisplay`
 
+### Design system
+
+`src/ui_theme.h` holds the tokens — surface levels, text colours, meaning
+colours (ok / warn / error / accent), plus a spacing and radius scale — in two
+palettes; `ui_theme_set_dark()` picks one at startup. `src/ui_kit.h` builds
+everything from them: cards, tiles, buttons, icon buttons, status pills,
+overline captions, values, rules and progress bars. Screens should reach for
+those instead of styling objects by hand, so a change of look happens in one
+place.
+
+Switching the palette needs a restart — the screens carry their colours in the
+objects, and re-theming at runtime would only repaint what LVGL itself owns.
+The settings switch says so and restarts on confirmation.
+
+### Fonts
+
+The built-in LVGL Montserrat faces only cover ASCII, so umlauts and accents —
+in the UI and in file names coming from Bambuddy — rendered as empty boxes.
+`src/fonts/` holds replacements covering Latin-1 (0xA0–0xFF) on top of the
+same glyph set the built-ins use; `src/ui_font.h` documents the
+`lv_font_conv` command that generates them. Anything beyond Latin-1 (Chinese
+model names, em dashes, typographic quotes) still renders as a box.
+
 ### Build
 
 ```bash
@@ -214,15 +262,55 @@ pio run --target upload
 pio device monitor
 ```
 
+### Releases
+
+`version.txt` in the repo root holds the firmware version — a single line,
+e.g. `1.0.1`. It is used twice: `pre_build.py` compiles it into the firmware
+(shown on the update page), and `release.sh` names the released binary after
+it.
+
+```bash
+./release.sh            # copy the current build
+./release.sh --build    # run "pio run" first
+./release.sh --force    # replace an existing file of the same version
+```
+
+The result lands in `firmware-build/`:
+
+```
+firmware-build/bambuddy-display-v1.0.1.bin
+```
+
+The script prints size (including how much of the 1.92 MB OTA partition it
+uses), build time, SHA-256 and the **build id** — the first 8 bytes of the ELF
+hash the IDF embeds into the image. The update page shows the same 8
+characters, which is how you confirm the board is really running the file you
+just uploaded. It refuses to overwrite an existing release of the same version
+and warns when sources are newer than the build.
+
+### Web update (OTA)
+
+Settings → **FIRMWARE** → *Web-Update*. While the switch is on, the device runs
+a small web server on port 80; the row underneath shows the address to open
+(e.g. `http://192.168.1.23`). The page lists the running firmware — version,
+build time, build id, size, active OTA partition, free space — and takes a
+`.bin` from `firmware-build/` (or `firmware.bin` straight out of
+`.pio/build/esp32-4848S040CIY1/`). After the last byte the board reboots into
+the new image.
+
+The switch is off by default and its state survives a restart. While it is on,
+anyone on the same network can flash the device: there is no password.
+
 ## Tested With
 
-Tested against a private **Bambuddy v1.2.5.2** instance on a **Bambu Lab P1S v01.10.00.00**.
+Tested against a private **Bambuddy v1.2.5.3** instance on a **Bambu Lab P1S v01.10.00.00**.
 
 ## Project Status
 
 This is no longer a generic display demo. It is a dedicated **Bambuddy companion display** for Bambu printers.
 
-A sensible next step would be a small web flasher page so the firmware can be installed directly from the browser, similar to WLED or Tasmota.
+Firmware can now be updated from the browser (see *Web update*); the first
+flash still needs USB.
 
 ## Thanks
 

@@ -7,7 +7,11 @@
 #include <freertos/semphr.h>
 #include <string.h>
 
+#include <Preferences.h>
+
+#include "bambuddy_api.h"
 #include "bambuddy_config.h"
+#include "bambuddy_hms.h"
 #include "bambuddy_http.h"
 #include "bambuddy_status_parse.h"
 
@@ -214,6 +218,177 @@ static void control_plug(int32_t plug_id, bool turn_on)
     last_fetch_ms = 0;
 }
 
+// ============================================================
+// Nach dem Druck ausschalten
+// ============================================================
+//
+// Warum das hier und nicht in Bambuddy: siehe Kopf von
+// bambuddy_smart_plugs.h — beide Wege der API sind fuer einen API-Schluessel
+// zu. Das Display kann die Steckdose aber schalten, und den Zustandswechsel
+// sieht es ohnehin.
+
+// Nachlauf nach FINISH. Zehn Minuten — doppelt so lang wie Bambuddys eigener
+// Standard: Zeit genug, dass die Luefter die Duese herunterkuehlen und dass
+// man das Werkstueck noch bei laufendem Licht abnimmt, bevor der Strom faellt.
+static constexpr uint32_t AUTO_OFF_DELAY_MS = 10 * 60 * 1000;
+
+// Darunter gilt der Drucker als kalt genug. Der Strom faellt nicht, solange
+// die Duese heisser ist — sonst steht die Luft in der Kammer still, waehrend
+// das Filament in der heissen Duese weiterkocht.
+static constexpr float AUTO_OFF_NOZZLE_MAX_C = 50.0f;
+
+// Sicherheitsnetz gegen einen Drucker, der nie abkuehlt (Duesenfuehler
+// defekt, Wert bleibt stehen): Nach dieser Zeit wird trotzdem geschaltet.
+static constexpr uint32_t AUTO_OFF_MAX_WAIT_MS = 30 * 60 * 1000;
+
+static constexpr const char *AUTO_OFF_NS = "plugs";
+static constexpr const char *AUTO_OFF_KEY = "autooff";
+
+static volatile bool auto_off_enabled = false;
+static bool auto_off_loaded = false;
+static bool auto_off_saw_running = false;
+static uint32_t auto_off_since_ms = 0; // seit wann steht FINISH an?
+static char auto_off_last_state[16] = "";
+
+static void auto_off_load()
+{
+    if (auto_off_loaded) return;
+    auto_off_loaded = true;
+
+    Preferences prefs;
+    prefs.begin(AUTO_OFF_NS, true);
+    auto_off_enabled = prefs.getBool(AUTO_OFF_KEY, false);
+    prefs.end();
+}
+
+// Welche Steckdose versorgt den Drucker? Bambuddy beantwortet das selbst —
+// bei mehreren zugeordneten Dosen (Drucker, Gehaeuseluefter, Skript) liefert
+// dieser Endpunkt die, die wirklich den Strom des Druckers schaltet. Die
+// Auswahl hier nachzubauen hiesse, sie beim naechsten Umbau falsch zu haben.
+static int32_t fetch_printer_plug_id(char *name_out, size_t name_len)
+{
+    if (name_out && name_len) name_out[0] = '\0';
+
+    BambuddyHttp &session = smart_plug_http;
+    const char *url = bambuddy_url("/smart-plugs/by-printer/%d", bambuddy_printer_id());
+    if (!session.begin(url, true)) return 0;
+
+    HTTPClient &http = session.http();
+    http.setTimeout(2500);
+    http.setConnectTimeout(2500);
+
+    const int code = http.GET();
+    if (code != 200) {
+        session.end(false);
+        Serial.printf("[Smart Plugs] Drucker-Steckdose HTTP %d\n", code);
+        return 0;
+    }
+
+    JsonDocument filter;
+    filter["id"] = true;
+    filter["name"] = true;
+    filter["controls_printer_power"] = true;
+
+    JsonDocument doc;
+    const DeserializationError err =
+        deserializeJson(doc, http.getStream(), DeserializationOption::Filter(filter));
+    session.end(false);
+    if (err) {
+        Serial.printf("[Smart Plugs] Drucker-Steckdose nicht lesbar: %s\n", err.c_str());
+        return 0;
+    }
+
+    if (!(doc["controls_printer_power"] | false)) {
+        // Zugeordnet ist sie, aber sie schaltet nicht den Strom des Druckers.
+        // Dann lieber nichts tun als das Falsche ausschalten.
+        Serial.println("[Smart Plugs] Zugeordnete Steckdose schaltet den Drucker nicht");
+        return 0;
+    }
+
+    if (name_out && name_len) {
+        bambuddy_copy_field(name_out, name_len, doc["name"] | "");
+    }
+    return doc["id"] | 0;
+}
+
+static void auto_off_fire()
+{
+    char plug_name[40];
+    const int32_t plug_id = fetch_printer_plug_id(plug_name, sizeof(plug_name));
+    if (plug_id == 0) {
+        set_message("Keine Steckdose für den Drucker");
+        return;
+    }
+
+    // Erst ins Protokoll, dann schalten: Haengt das Display an derselben
+    // Steckdose, ist danach womoeglich keine Gelegenheit mehr dazu.
+    bambuddy_hms_report_auto_off(plug_name);
+
+    control_plug(plug_id, false);
+    Serial.printf("[Smart Plugs] Drucker nach Druckende ausgeschaltet (Dose %d)\n",
+                  (int)plug_id);
+}
+
+static void auto_off_update()
+{
+    auto_off_load();
+
+    bambuddy_status_t st;
+    if (!bambuddy_api_copy_status(&st) || !st.printer_connected) return;
+
+    const bool finished = strcasecmp(st.state, "FINISH") == 0;
+    const bool running = strcasecmp(st.state, "RUNNING") == 0;
+
+    // Zustandswechsel verfolgen — unabhaengig davon, ob die Abschaltung
+    // gerade eingeschaltet ist. Wer sie mitten im Druck einschaltet, soll
+    // nicht bis zum uebernaechsten Auftrag warten muessen.
+    if (strcmp(auto_off_last_state, st.state) != 0) {
+        bambuddy_copy_field(auto_off_last_state, sizeof(auto_off_last_state), st.state);
+        auto_off_since_ms = millis();
+    }
+
+    if (running) auto_off_saw_running = true;
+
+    if (!finished) return;
+    if (!auto_off_enabled || !auto_off_saw_running) return;
+
+    const uint32_t waiting = millis() - auto_off_since_ms;
+    if (waiting < AUTO_OFF_DELAY_MS) return;
+
+    if (st.nozzle > AUTO_OFF_NOZZLE_MAX_C && waiting < AUTO_OFF_MAX_WAIT_MS) return;
+
+    // Nur einmal: Das Merkmal wird geloescht, bevor geschaltet wird. Bleibt
+    // der Drucker nach dem Abschalten in FINISH stehen (die letzte Antwort
+    // altert ja nur), darf das nicht in eine Endlosschleife laufen.
+    auto_off_saw_running = false;
+    auto_off_fire();
+}
+
+bool bambuddy_auto_off_enabled()
+{
+    auto_off_load();
+    return auto_off_enabled;
+}
+
+void bambuddy_auto_off_set(bool on)
+{
+    auto_off_load();
+    auto_off_enabled = on;
+
+    Preferences prefs;
+    prefs.begin(AUTO_OFF_NS, false);
+    prefs.putBool(AUTO_OFF_KEY, on);
+    prefs.end();
+
+    Serial.printf("[Smart Plugs] Nach Druckende ausschalten: %s\n", on ? "an" : "AUS");
+}
+
+bool bambuddy_auto_off_pending()
+{
+    return auto_off_enabled && auto_off_saw_running &&
+           strcasecmp(auto_off_last_state, "FINISH") == 0;
+}
+
 void bambuddy_smart_plugs_set_visible(bool value)
 {
     visible = value;
@@ -241,6 +416,11 @@ void bambuddy_smart_plugs_update()
         pending_control_id = 0;
         control_plug(control_id, pending_control_on);
     }
+
+    // Vor dem Sichtbarkeits-Riegel: Die Abschaltung nach dem Druck muss auch
+    // laufen, wenn niemand den Steckdosen-Screen offen hat — meistens gerade
+    // dann.
+    auto_off_update();
 
     if (!visible) return;
 

@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -36,14 +37,14 @@ static char subscribed_topic[129] = "";
 static const char *state_text(int state)
 {
     switch (state) {
-    case MQTT_CONNECTION_TIMEOUT:      return "Zeitueberschreitung";
+    case MQTT_CONNECTION_TIMEOUT:      return "Zeitüberschreitung";
     case MQTT_CONNECTION_LOST:         return "Verbindung verloren";
     case MQTT_CONNECT_FAILED:          return "Broker nicht erreichbar";
     case MQTT_DISCONNECTED:            return "getrennt";
     case MQTT_CONNECTED:               return "verbunden";
     case MQTT_CONNECT_BAD_PROTOCOL:    return "Protokoll abgelehnt";
     case MQTT_CONNECT_BAD_CLIENT_ID:   return "Client-ID abgelehnt";
-    case MQTT_CONNECT_UNAVAILABLE:     return "Broker nicht verfuegbar";
+    case MQTT_CONNECT_UNAVAILABLE:     return "Broker nicht verfügbar";
     case MQTT_CONNECT_BAD_CREDENTIALS: return "Benutzer oder Passwort falsch";
     case MQTT_CONNECT_UNAUTHORIZED:    return "Zugriff verweigert";
     default:                           return "unbekannter Fehler";
@@ -212,7 +213,23 @@ static void mqtt_service()
 
     if (!mqtt.loop()) {
         const int state = mqtt.state();
-        Serial.printf("[MQTT] Verbindung verloren: %s (rc=%d)\n", state_text(state), state);
+
+        // Speicherstand mitschreiben.
+        //
+        // Abbrueche treten auffaellig oft dann auf, wenn die Oberflaeche
+        // gerade viele Objekte anlegt — Bildschirmschoner, langes Scrollen
+        // in den Einstellungen. LVGL nimmt dafuer den internen RAM, und aus
+        // demselben Speicher holt sich lwIP seine Puffer. Ist das die
+        // Ursache, steht es hier: wenig frei oder ein zu kleiner groesster
+        // Block. Bleiben die Zahlen dagegen hoch, liegt es am Netz und nicht
+        // am Geraet.
+        Serial.printf("[MQTT] Verbindung verloren: %s (rc=%d) — intern frei %u, "
+                      "groesster Block %u\n",
+                      state_text(state), state,
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
+                                                        MALLOC_CAP_8BIT),
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                                 MALLOC_CAP_8BIT));
         force_disconnect();
     }
 }

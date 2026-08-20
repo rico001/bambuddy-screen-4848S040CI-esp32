@@ -11,14 +11,17 @@
 #include "bambuddy_config.h"
 #include "bambuddy_cover.h"
 #include "bambuddy_queue.h"
+#include "bambuddy_smart_plugs.h"
 #include "printer_icon.h"
 #include "settings_screen.h"
+#include "ui_kit.h"
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_dialog.h"
 #include "ui_image_view.h"
 #include "ui_theme.h"
 #include "ui_util.h"
+#include "ui_font.h"
 
 // ============================================================
 // Layout (Hoehe ohne Statusleiste — siehe ui_layout.h)
@@ -55,6 +58,7 @@ static constexpr uint32_t COL_BED = 0x42A5F5;
 static lv_obj_t *name_lbl;
 static lv_obj_t *badge;
 static lv_obj_t *badge_lbl;
+static lv_obj_t *badge_dot;
 
 static lv_obj_t *cover_canvas;
 static lv_obj_t *cover_placeholder;
@@ -65,6 +69,9 @@ static lv_obj_t *progress_bar;
 static lv_obj_t *progress_lbl;
 static lv_obj_t *remaining_lbl;
 static lv_obj_t *queue_lbl;
+
+static lv_obj_t *auto_off_btn;
+static lv_obj_t *cam_btn;
 
 static lv_obj_t *nozzle_value_lbl;
 static lv_obj_t *bed_value_lbl;
@@ -216,9 +223,9 @@ static const char *speed_name(int32_t level)
 static void set_temperature(lv_obj_t *label, float value, float target)
 {
     if (target > 0.5f) {
-        ui_set_text_fmt(label, "%d / %d C", (int)(value + 0.5f), (int)(target + 0.5f));
+        ui_set_text_fmt(label, "%d / %d °C", (int)(value + 0.5f), (int)(target + 0.5f));
     } else {
-        ui_set_text_fmt(label, "%d C", (int)(value + 0.5f));
+        ui_set_text_fmt(label, "%d °C", (int)(value + 0.5f));
     }
 }
 
@@ -226,16 +233,12 @@ static void set_temperature(lv_obj_t *label, float value, float target)
 // Aktualisierung
 // ============================================================
 
+// Die Farbe steckt jetzt im Punkt der Pille, nicht mehr in ihrer Flaeche.
+// ui_pill_set schreibt nur bei echter Aenderung — die Pruefung von frueher
+// ist damit dorthin gewandert.
 static void set_badge(uint32_t color, const char *text)
 {
-    const char *current = lv_label_get_text(badge_lbl);
-    if (current && strcmp(current, text) == 0) {
-        ui_set_bg_color(badge, color);
-        return;
-    }
-
-    ui_set_bg_color(badge, color);
-    lv_label_set_text(badge_lbl, text);
+    ui_pill_set(badge_lbl, badge_dot, color, text);
     lv_obj_set_width(badge, LV_SIZE_CONTENT);
 }
 
@@ -263,7 +266,7 @@ static void update_link()
         return;
     }
     if (millis() - beat > 30000) {
-        set_badge(COL_ERR, LV_SYMBOL_WARNING "  Dienst haengt");
+        set_badge(COL_ERR, LV_SYMBOL_WARNING "  Dienst hängt");
         footer_error = "Der Netzwerk-Dienst meldet sich nicht mehr.";
         return;
     }
@@ -355,8 +358,22 @@ static void update_status_fields()
     ui_set_text(state_lbl, text);
     ui_set_text_color(state_lbl, state_color);
 
-    const bool show_job = status.job[0] && !stale_failure;
-    ui_set_text(job_lbl, show_job ? status.job : "Kein Auftrag");
+    // Den Auftragsnamen nur zeigen, solange er etwas beschreibt.
+    //
+    // Der Drucker meldet subtask_name auch dann weiter, wenn er laengst
+    // wieder im Ruhezustand steht — auf dem Display stand deshalb unter
+    // "Bereit" noch der Name des letzten Drucks, als liege er an. Nach dem
+    // Ende gehoert er noch dazu ("Fertig: bank-fuss"), im Ruhezustand nicht
+    // mehr.
+    const bool finished = strcasecmp(status.state, "FINISH") == 0 ||
+                          strcasecmp(status.state, "finished") == 0;
+    const bool job_relevant = job_active || (finished && !stale_failure) ||
+                              (failed && !stale_failure);
+
+    // Ohne Auftrag bleibt die Zeile leer statt "Kein Auftrag" zu behaupten:
+    // Dass gerade nichts laeuft, sagt der Zustand darueber schon.
+    const bool show_job = status.job[0] && job_relevant;
+    ui_set_text(job_lbl, show_job ? status.job : "");
 
     // Schichtzaehler nur bei laufendem Auftrag: nach Abbruch oder Ende
     // beschreibt er nichts mehr, was gerade passiert.
@@ -512,16 +529,34 @@ static void update_controls()
 
     // Die Geschwindigkeit laesst sich nur waehrend eines Drucks aendern.
     set_enabled(speed_btn, running || paused);
-    ui_set_text(speed_btn_lbl, speed_name(status.speed_level));
+    ui_set_text_fmt(speed_btn_lbl, BB_SYMBOL_SPEED "\n%s",
+                    speed_name(status.speed_level));
 
     set_enabled(pause_btn, running);
     set_enabled(resume_btn, paused);
     set_enabled(stop_btn, has_job);
     set_enabled(light_btn, reachable && !light_switching);
 
+    // Ohne erreichbaren Drucker gibt es kein Livebild — der Knopf fuehrte
+    // sonst in eine Ansicht, die nur "Kamera nicht erreichbar" zeigt.
+    // Gesperrt heisst hier zusaetzlich blasser: Der Knopf sitzt auf dem
+    // Modellbild, wo die uebliche graue Flaeche des Baukastens nicht passt.
+    // Nur bei echter Aenderung setzen: lv_obj_set_style_bg_opa() vergleicht
+    // nicht und macht das Objekt sonst zweimal je Sekunde schmutzig.
+    static int shown_cam_opa = -1;
+    const int cam_opa = reachable ? LV_OPA_60 : LV_OPA_20;
+    if (cam_opa != shown_cam_opa) {
+        shown_cam_opa = cam_opa;
+        set_enabled(cam_btn, reachable);
+        lv_obj_set_style_bg_opa(cam_btn, (lv_opa_t)cam_opa, 0);
+    }
+
     const bool light_on = have_status && status.chamber_light;
-    ui_set_text(light_btn_lbl, light_on ? LV_SYMBOL_CHARGE "  Licht aus"
-                                       : LV_SYMBOL_CHARGE "  Licht an");
+    // Zweizeilig wie alle Knoepfe der Reihe: Symbol oben, Beschriftung
+    // darunter. Die beiden Knoepfe mit wechselndem Text schreiben ihn selbst
+    // und muessen die Form deshalb selbst mitbringen.
+    ui_set_text(light_btn_lbl, light_on ? LV_SYMBOL_CHARGE "\nLicht aus"
+                                        : LV_SYMBOL_CHARGE "\nLicht an");
     ui_set_bg_color(light_btn, light_on ? COL_NEUTRAL : COL_WARN);
 }
 
@@ -543,6 +578,59 @@ static void stop_cb(lv_event_t *)
                stop_confirmed, nullptr);
 }
 
+// --- Nach dem Druck ausschalten ------------------------------------------
+
+static void update_auto_off_button()
+{
+    if (!auto_off_btn) return;
+
+    const bool on = bambuddy_auto_off_enabled();
+
+    // Waehrend der Nachlaufzeit in Warnfarbe: Der Strom faellt gleich, und
+    // wer jetzt noch etwas am Drucker vorhat, soll es sehen.
+    ui_set_bg_color(auto_off_btn,
+                    bambuddy_auto_off_pending() ? COL_WARN
+                                                : (on ? COL_PLUG : COL_NEUTRAL));
+
+    // Deckkraft nur bei echter Aenderung setzen. lv_obj_set_style_opa()
+    // vergleicht nicht — es macht das Objekt jedes Mal schmutzig, und diese
+    // Funktion laeuft zweimal je Sekunde. Ein Knopf, der sich zweimal pro
+    // Sekunde neu zeichnet, ist auf diesem Board kein Schoenheitsfehler,
+    // sondern verlorene Speicherbandbreite.
+    static int shown_opa = -1;
+    const int opa = on ? LV_OPA_COVER : LV_OPA_50;
+    if (opa != shown_opa) {
+        shown_opa = opa;
+        lv_obj_set_style_opa(auto_off_btn, (lv_opa_t)opa, 0);
+    }
+}
+
+static void auto_off_confirmed(void *)
+{
+    bambuddy_auto_off_set(true);
+    update_auto_off_button();
+}
+
+// Rueckfrage nur beim Einschalten: Ausschalten der Automatik nimmt niemandem
+// etwas weg, sie einzuschalten dagegen kappt spaeter den Strom — womoeglich,
+// waehrend jemand noch am Drucker steht.
+static void auto_off_cb(lv_event_t *)
+{
+    if (ui_confirm_is_open()) return;
+
+    if (bambuddy_auto_off_enabled()) {
+        bambuddy_auto_off_set(false);
+        update_auto_off_button();
+        return;
+    }
+
+    ui_confirm("Nach Druckende ausschalten?",
+               "Zehn Minuten nach dem Druckende und sobald die Düse unter "
+               "50 °C liegt, schaltet das Display die Steckdose des Druckers "
+               "aus.",
+               "Abbrechen", "Einschalten", COL_PLUG, auto_off_confirmed, nullptr);
+}
+
 static void speed_chosen(int index, void *)
 {
     const int level = index + 1; // Auswahl 0..3 -> Stufe 1..4
@@ -551,7 +639,7 @@ static void speed_chosen(int index, void *)
     // alte Stufe zeigt. Der naechste Status korrigiert es, falls der
     // Drucker den Wechsel ablehnt.
     status.speed_level = level;
-    ui_set_text(speed_btn_lbl, speed_name(level));
+    ui_set_text_fmt(speed_btn_lbl, BB_SYMBOL_SPEED "\n%s", speed_name(level));
 
     bambuddy_api_send_speed(level);
 }
@@ -678,12 +766,14 @@ static void update_log_button()
     const bool show = settings_log_any();
     if (show == !lv_obj_has_flag(log_btn, LV_OBJ_FLAG_HIDDEN)) return;
 
+    // Die Pille steht links am Namen und wandert nicht mehr mit: Frueher
+    // richtete sie sich an den Knoepfen aus und sprang, sobald das Protokoll
+    // ein- oder ausgeschaltet wurde.
     if (show) {
         lv_obj_remove_flag(log_btn, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(log_btn, LV_OBJ_FLAG_HIDDEN);
     }
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + (show ? 3 : 2) * (52 + 8)), 8);
 }
 
 static void ui_tick_cb(lv_timer_t *)
@@ -703,6 +793,7 @@ static void ui_tick_cb(lv_timer_t *)
     update_log_button();
     update_cover();
     update_controls();
+    update_auto_off_button();
     update_camera_overlay();
     update_cover_big();
 
@@ -797,23 +888,18 @@ static void ui_tick_cb(lv_timer_t *)
 // Aufbau
 // ============================================================
 
+// Karten kommen aus dem Baukasten (ui_kit.h) — Radius, Rand und Flaechenton
+// sollen ueberall dieselben sein.
 static lv_obj_t *card_create(lv_obj_t *parent, int x, int y, int w, int h)
 {
-    lv_obj_t *card = lv_obj_create(parent);
-    lv_obj_set_size(card, w, h);
-    lv_obj_align(card, LV_ALIGN_TOP_LEFT, x, y);
-    lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(card, 12, 0);
-    lv_obj_set_style_border_width(card, 0, 0);
-    lv_obj_set_style_pad_all(card, 0, 0);
-    return card;
+    return ui_card(parent, x, y, w, h);
 }
 
 static lv_obj_t *muted_label(lv_obj_t *parent, const char *text)
 {
     lv_obj_t *lbl = lv_label_create(parent);
     lv_label_set_text(lbl, text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(COL_MUTED), 0);
     return lbl;
 }
@@ -822,81 +908,48 @@ static void build_header(lv_obj_t *parent)
 {
     lv_obj_t *printer_img = lv_image_create(parent);
     lv_image_set_src(printer_img, &printer_icon);
-    lv_obj_set_style_image_recolor(printer_img, lv_color_white(), 0);
+    lv_obj_set_style_image_recolor(printer_img, lv_color_hex(COL_TEXT), 0);
     lv_obj_set_style_image_recolor_opa(printer_img, LV_OPA_COVER, 0);
-    lv_obj_align(printer_img, LV_ALIGN_TOP_LEFT, PAD + 2, 7);
+    lv_obj_align(printer_img, LV_ALIGN_TOP_LEFT, PAD + 2, 9);
 
     name_lbl = lv_label_create(parent);
     lv_label_set_text(name_lbl, "Drucker");
-    lv_obj_set_style_text_font(name_lbl, &lv_font_montserrat_16, 0);
-    // Schmal halten: Rechts stehen drei Sprungknoepfe und die Badge, und der
-    // Name darf ihr nicht in die Quere kommen. Zu lange Namen kuerzt LVGL
-    // mit Punkten — der Name ist hier die entbehrlichste Angabe.
-    lv_obj_set_width(name_lbl, 106);
+    lv_obj_set_style_text_font(name_lbl, &bb_font_16, 0);
+    lv_obj_set_style_text_color(name_lbl, lv_color_hex(COL_TEXT), 0);
+    // Schmal halten: Rechts stehen die Sprungknoepfe und die Zustandspille,
+    // und der Name darf ihnen nicht in die Quere kommen. Zu lange Namen
+    // kuerzt LVGL mit Punkten — der Name ist hier die entbehrlichste Angabe.
+    lv_obj_set_width(name_lbl, 104);
     lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(name_lbl, LV_ALIGN_TOP_LEFT, PAD + 38, 12);
+
+    // Zustand als Pille direkt neben dem Namen: Beides zusammen ist ein Satz
+    // ("Bambu P1S ist verbunden") und gehoert nebeneinander, nicht an
+    // entgegengesetzte Raender.
+    badge = ui_pill(parent, COL_MUTED, "...", &badge_lbl, &badge_dot);
+    lv_obj_align(badge, LV_ALIGN_TOP_LEFT, PAD + 38 + 104 + GAP_S, 10);
 
     // Direktspruenge in die Systemkachel, ganz rechts in der Kopfzeile. Beide
     // Ansichten braucht man, waehrend man vor dem Drucker steht: die
     // Steckdosen meist direkt nach einem Druckende, die Jog-Steuerung beim
     // Aufraeumen der Platte. Dafuer soll man nicht erst zwei Kacheln weiter
     // wischen.
-    lv_obj_t *plugs_btn = lv_button_create(parent);
-    lv_obj_set_size(plugs_btn, 52, 30);
-    lv_obj_align(plugs_btn, LV_ALIGN_TOP_RIGHT, -PAD, 8);
-    lv_obj_set_style_radius(plugs_btn, 10, 0);
-    lv_obj_set_style_bg_color(plugs_btn, lv_color_hex(COL_PLUG), 0);
+    static constexpr int ICON_BTN = 36;
+    static constexpr int ICON_STEP = ICON_BTN + GAP_S;
+
+    lv_obj_t *plugs_btn = ui_icon_button(parent, LV_SYMBOL_POWER, COL_PLUG, ICON_BTN);
+    lv_obj_align(plugs_btn, LV_ALIGN_TOP_RIGHT, -PAD, 5);
     lv_obj_add_event_cb(plugs_btn, plugs_cb, LV_EVENT_CLICKED, nullptr);
 
-    lv_obj_t *plugs_icon = lv_label_create(plugs_btn);
-    lv_label_set_text(plugs_icon, LV_SYMBOL_POWER);
-    lv_obj_center(plugs_icon);
-
-    lv_obj_t *jog_btn = lv_button_create(parent);
-    lv_obj_set_size(jog_btn, 52, 30);
-    lv_obj_align(jog_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 52 + 8), 8);
-    lv_obj_set_style_radius(jog_btn, 10, 0);
-    lv_obj_set_style_bg_color(jog_btn, lv_color_hex(COL_JOG), 0);
+    lv_obj_t *jog_btn = ui_icon_button(parent, LV_SYMBOL_SHUFFLE, COL_JOG, ICON_BTN);
+    lv_obj_align(jog_btn, LV_ALIGN_TOP_RIGHT, -(PAD + ICON_STEP), 5);
     lv_obj_add_event_cb(jog_btn, jog_cb, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_t *jog_icon = lv_label_create(jog_btn);
-    lv_label_set_text(jog_icon, LV_SYMBOL_SHUFFLE);
-    lv_obj_center(jog_icon);
 
     // Protokoll der Druckermeldungen. Gehoert hierher und nicht auf die
     // Systemkachel: Was der Drucker gemeldet hat, sucht man beim Drucker.
-    log_btn = lv_button_create(parent);
-    lv_obj_set_size(log_btn, 52, 30);
-    lv_obj_align(log_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * (52 + 8)), 8);
-    lv_obj_set_style_radius(log_btn, 10, 0);
-    lv_obj_set_style_bg_color(log_btn, lv_color_hex(COL_NEUTRAL), 0);
+    log_btn = ui_icon_button(parent, LV_SYMBOL_BELL, COL_NEUTRAL, ICON_BTN);
+    lv_obj_align(log_btn, LV_ALIGN_TOP_RIGHT, -(PAD + 2 * ICON_STEP), 5);
     lv_obj_add_event_cb(log_btn, messages_cb, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_t *log_icon = lv_label_create(log_btn);
-    lv_label_set_text(log_icon, LV_SYMBOL_BELL);
-    lv_obj_center(log_icon);
-
-    // Fester Abstand vom rechten Rand statt Ausrichtung am Knopf: Die Badge
-    // aendert mit dem Text ihre Breite und waechst dann nach links, ohne
-    // dass die Position neu berechnet werden muss.
-    badge = lv_obj_create(parent);
-    // Genauso hoch wie die beiden Sprungknoepfe rechts daneben (52 x 30).
-    // Zwei Pixel Unterschied sieht man nicht bewusst, aber die Zeile wirkt
-    // dadurch unsauber ausgerichtet.
-    lv_obj_set_height(badge, 30);
-    lv_obj_set_width(badge, LV_SIZE_CONTENT);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -(PAD + 3 * (52 + 8)), 8);
-    lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(badge, 15, 0); // halbe Hoehe: bleibt eine Kapsel
-    lv_obj_set_style_border_width(badge, 0, 0);
-    lv_obj_set_style_pad_hor(badge, 12, 0);
-    lv_obj_set_style_pad_ver(badge, 0, 0);
-
-    badge_lbl = lv_label_create(badge);
-    lv_label_set_text(badge_lbl, "...");
-    lv_obj_set_style_text_font(badge_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(badge_lbl, lv_color_white(), 0);
-    lv_obj_center(badge_lbl);
 }
 
 static void build_job_card(lv_obj_t *parent)
@@ -906,12 +959,8 @@ static void build_job_card(lv_obj_t *parent)
     // Bildbereich: Platzhalter und Modellbild liegen deckungsgleich.
     // Der Platzhalter traegt dieselbe Farbe, gegen die das PNG beim
     // Dekodieren freigestellt wird — dadurch gibt es keine sichtbare Kante.
-    cover_placeholder = lv_obj_create(card);
-    lv_obj_set_size(cover_placeholder, COVER_SIZE, COVER_SIZE);
-    lv_obj_align(cover_placeholder, LV_ALIGN_TOP_LEFT, 14, 12);
-    lv_obj_remove_flag(cover_placeholder, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(cover_placeholder, 8, 0);
-    lv_obj_set_style_border_width(cover_placeholder, 0, 0);
+    cover_placeholder = ui_tile(card, COVER_SIZE, COVER_SIZE);
+    lv_obj_align(cover_placeholder, LV_ALIGN_TOP_LEFT, GAP_L, GAP_L);
     lv_obj_set_style_bg_opa(cover_placeholder, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(cover_placeholder, lv_color_hex(COVER_BG), 0);
 
@@ -922,7 +971,7 @@ static void build_job_card(lv_obj_t *parent)
 
     cover_canvas = lv_canvas_create(card);
     lv_obj_set_size(cover_canvas, COVER_SIZE, COVER_SIZE);
-    lv_obj_align(cover_canvas, LV_ALIGN_TOP_LEFT, 14, 12);
+    lv_obj_align(cover_canvas, LV_ALIGN_TOP_LEFT, GAP_L, GAP_L);
     lv_obj_add_flag(cover_canvas, LV_OBJ_FLAG_HIDDEN);
 
     // Tippen aufs Modell zeigt es gross — wie beim Kamerabild
@@ -931,10 +980,11 @@ static void build_job_card(lv_obj_t *parent)
 
     // Kamera-Knopf in der Ecke des Bildes — dort, wo man das Livebild
     // erwartet, und ohne der Steuerungsreihe Platz wegzunehmen.
-    lv_obj_t *cam_btn = lv_button_create(card);
+    cam_btn = lv_button_create(card);
     lv_obj_set_size(cam_btn, 40, 34);
-    lv_obj_align(cam_btn, LV_ALIGN_TOP_LEFT, 14 + COVER_SIZE - 46, 12 + COVER_SIZE - 40);
-    lv_obj_set_style_radius(cam_btn, 8, 0);
+    lv_obj_align(cam_btn, LV_ALIGN_TOP_LEFT, GAP_L + COVER_SIZE - 46,
+                 GAP_L + COVER_SIZE - 40);
+    lv_obj_set_style_radius(cam_btn, RADIUS_CTRL, 0);
     lv_obj_set_style_bg_color(cam_btn, lv_color_hex(0x000000), 0);
     lv_obj_set_style_bg_opa(cam_btn, LV_OPA_60, 0);
     lv_obj_set_style_shadow_width(cam_btn, 0, 0);
@@ -946,13 +996,11 @@ static void build_job_card(lv_obj_t *parent)
     lv_obj_center(cam_icon);
 
     // Rechte Spalte
-    const int col_x = 14 + COVER_SIZE + 16;
-    const int col_w = CONTENT_W - col_x - 14;
+    const int col_x = GAP_L + COVER_SIZE + GAP_L;
+    const int col_w = CONTENT_W - col_x - GAP_L;
 
-    state_lbl = lv_label_create(card);
-    lv_label_set_text(state_lbl, "...");
-    lv_obj_set_style_text_font(state_lbl, &lv_font_montserrat_24, 0);
-    lv_obj_align(state_lbl, LV_ALIGN_TOP_LEFT, col_x, 12);
+    state_lbl = ui_value(card, "...");
+    lv_obj_align(state_lbl, LV_ALIGN_TOP_LEFT, col_x, GAP_M);
 
     job_lbl = muted_label(card, "");
     lv_obj_set_width(job_lbl, col_w);
@@ -963,29 +1011,55 @@ static void build_job_card(lv_obj_t *parent)
     lv_obj_set_width(layer_lbl, col_w);
     lv_obj_align(layer_lbl, LV_ALIGN_TOP_LEFT, col_x, 72);
 
-    progress_lbl = lv_label_create(card);
-    lv_label_set_text(progress_lbl, "");
-    lv_obj_set_style_text_font(progress_lbl, &lv_font_montserrat_24, 0);
-    lv_obj_align(progress_lbl, LV_ALIGN_TOP_LEFT, col_x, 98);
+    // Statt einer Ueberschrift ein Trenner: Dass die grosse Zahl darunter der
+    // Fortschritt ist, sagt schon das Prozentzeichen — und darunter steht die
+    // Restzeit, die zur selben Sache gehoert. Die Linie fasst beides zusammen,
+    // ohne ein Wort dafuer zu brauchen.
+    ui_rule(card, col_x, 100, col_w, 1, COL_LINE);
+
+    progress_lbl = ui_value(card, "");
+    lv_obj_align(progress_lbl, LV_ALIGN_TOP_LEFT, col_x, 110);
 
     remaining_lbl = lv_label_create(card);
     lv_label_set_text(remaining_lbl, "");
     lv_obj_set_width(remaining_lbl, col_w);
     lv_label_set_long_mode(remaining_lbl, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_color(remaining_lbl, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(remaining_lbl, LV_ALIGN_TOP_LEFT, col_x, 140);
+    lv_obj_align(remaining_lbl, LV_ALIGN_TOP_LEFT, col_x, 146);
 
     queue_lbl = muted_label(card, "");
     lv_obj_set_width(queue_lbl, col_w);
     lv_label_set_long_mode(queue_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_align(queue_lbl, LV_ALIGN_TOP_LEFT, col_x, 166);
+    lv_obj_align(queue_lbl, LV_ALIGN_TOP_LEFT, col_x, 168);
 
-    progress_bar = lv_bar_create(card);
-    lv_obj_set_size(progress_bar, CONTENT_W - 28, 16);
-    lv_obj_align(progress_bar, LV_ALIGN_TOP_LEFT, 14, 186);
+    // Nach dem Druck ausschalten. Sitzt in der oberen rechten Ecke der
+    // Auftragskarte und nicht bei den Steuerknoepfen darunter: Es ist keine
+    // Aktion, die jetzt etwas tut, sondern eine Aussage darueber, was nach
+    // diesem Auftrag passieren soll — und daneben steht der Auftrag.
+    auto_off_btn = lv_button_create(card);
+    lv_obj_set_size(auto_off_btn, 36, 36);
+    lv_obj_align(auto_off_btn, LV_ALIGN_TOP_RIGHT, -10, 6);
+    lv_obj_set_style_radius(auto_off_btn, 18, 0);
+    lv_obj_set_style_shadow_width(auto_off_btn, 0, 0);
+    lv_obj_add_event_cb(auto_off_btn, auto_off_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *auto_off_icon = lv_label_create(auto_off_btn);
+    lv_label_set_text(auto_off_icon, BB_SYMBOL_CLOCK);
+    // Grosse Schnittgroesse, damit die Uhr den Knopf fast ausfuellt: Sie ist
+    // hier kein Beiwerk neben einer Beschriftung, sondern die ganze Aussage.
+    lv_obj_set_style_text_font(auto_off_icon, &bb_font_24, 0);
+    lv_obj_set_style_text_color(auto_off_icon, lv_color_white(), 0);
+    lv_obj_center(auto_off_icon);
+
+    update_auto_off_button();
+
+    // Flacher als frueher (10 statt 16 Pixel) und mit runden Enden: Der
+    // Balken soll den Fortschritt zeigen, nicht die Karte dominieren — die
+    // Zahl daneben sagt es ohnehin genauer.
+    progress_bar = ui_progress(card, CONTENT_W - 2 * GAP_L, 10);
+    lv_obj_align(progress_bar, LV_ALIGN_BOTTOM_LEFT, GAP_L, -GAP_L);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(progress_bar, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
 }
 
 static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t color,
@@ -993,16 +1067,25 @@ static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t
 {
     lv_obj_t *card = card_create(parent, x, TEMP_Y, TEMP_W, TEMP_H);
 
-    lv_obj_t *title_lbl = lv_label_create(card);
-    lv_label_set_text(title_lbl, title);
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(title_lbl, lv_color_hex(color), 0);
-    lv_obj_align(title_lbl, LV_ALIGN_TOP_MID, 0, 7);
+    // Farbiger Punkt statt farbiger Ueberschrift: Die Zuordnung Duese/Bett
+    // bleibt erkennbar, der Text selbst bleibt ruhig und lesbar.
+    lv_obj_t *dot = lv_obj_create(card);
+    lv_obj_set_size(dot, 8, 8);
+    lv_obj_set_style_radius(dot, 4, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(dot, 0, 0);
+    lv_obj_remove_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(dot, LV_ALIGN_TOP_LEFT, GAP_L, 12);
 
-    lv_obj_t *value = lv_label_create(card);
-    lv_label_set_text(value, "");
-    lv_obj_set_style_text_font(value, &lv_font_montserrat_24, 0);
-    lv_obj_align(value, LV_ALIGN_TOP_MID, 0, 26);
+    lv_obj_t *title_lbl = ui_overline(card, title);
+    lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, GAP_L + 16, 9);
+
+    // Wert und Ueberschrift auf derselben Kante: Zwei Karten nebeneinander,
+    // beide linksbuendig — das gibt eine durchgehende Linie durch den Screen,
+    // an der das Auge entlanglaeuft.
+    lv_obj_t *value = ui_value(card, "");
+    lv_obj_align(value, LV_ALIGN_TOP_LEFT, GAP_L, 28);
 
     *value_out = value;
 }
@@ -1010,17 +1093,19 @@ static void build_temp_card(lv_obj_t *parent, int x, const char *title, uint32_t
 static lv_obj_t *control_button(lv_obj_t *parent, int x, const char *symbol,
                                 const char *text, uint32_t color, lv_event_cb_t cb)
 {
-    lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_set_size(btn, CTRL_W, CTRL_H);
+    lv_obj_t *btn = ui_button(parent, color, CTRL_W, CTRL_H);
     lv_obj_align(btn, LV_ALIGN_TOP_LEFT, x, CTRL_Y);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
-    lv_obj_set_style_radius(btn, 10, 0);
-    lv_obj_set_style_pad_hor(btn, 4, 0);
+    lv_obj_set_style_pad_hor(btn, GAP_XS, 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
 
+    // Symbol ueber der Beschriftung statt daneben: Bei fuenf Knoepfen auf 456
+    // Pixel bleiben je 84 Pixel — nebeneinander muesste die Schrift kleiner
+    // werden, uebereinander bleibt beides gross genug fuer einen Daumen.
     lv_obj_t *lbl = lv_label_create(btn);
-    lv_label_set_text_fmt(lbl, "%s  %s", symbol, text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_label_set_text_fmt(lbl, "%s\n%s", symbol, text);
+    lv_obj_set_style_text_font(lbl, &bb_font_12, 0);
+    lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_line_space(lbl, GAP_XS, 0);
     lv_obj_center(lbl);
 
     return btn;
@@ -1038,7 +1123,7 @@ static void build_controls(lv_obj_t *parent)
                                "Licht an", COL_WARN, light_cb);
     light_btn_lbl = lv_obj_get_child(light_btn, 0);
 
-    speed_btn = control_button(parent, PAD + 4 * (CTRL_W + CTRL_GAP), LV_SYMBOL_REFRESH,
+    speed_btn = control_button(parent, PAD + 4 * (CTRL_W + CTRL_GAP), BB_SYMBOL_SPEED,
                                "Tempo", COL_ACCENT, speed_cb);
     speed_btn_lbl = lv_obj_get_child(speed_btn, 0);
 }
@@ -1049,7 +1134,7 @@ void status_screen_create(lv_obj_t *parent)
 
     build_header(parent);
     build_job_card(parent);
-    build_temp_card(parent, PAD, "DUESE", COL_NOZZLE, &nozzle_value_lbl);
+    build_temp_card(parent, PAD, "DÜSE", COL_NOZZLE, &nozzle_value_lbl);
     build_temp_card(parent, PAD + TEMP_W + 12, "DRUCKBETT", COL_BED, &bed_value_lbl);
 
     build_controls(parent);
@@ -1058,7 +1143,7 @@ void status_screen_create(lv_obj_t *parent)
     ui_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -6);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);

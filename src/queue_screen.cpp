@@ -10,9 +10,11 @@
 #include "ui_layout.h"
 #include "ui_dialog.h"
 #include "ui_image_view.h"
+#include "ui_kit.h"
 #include "ui_theme.h"
 #include "ui_util.h"
 #include "ui_watch.h"
+#include "ui_font.h"
 
 // ============================================================
 // Layout
@@ -98,10 +100,10 @@ static void start_cb(lv_event_t *e)
     if (blocked[0]) {
         char warning[220];
         snprintf(warning, sizeof(warning),
-                 "%s\n\n%s\nEin Start ist erst moeglich, wenn der Drucker fertig "
+                 "%s\n\n%s\nEin Start ist erst möglich, wenn der Drucker fertig "
                  "und die Platte frei ist.",
                  shown[index].name, blocked);
-        ui_info("Start derzeit nicht moeglich", warning, "Verstanden");
+        ui_info("Start derzeit nicht möglich", warning, "Verstanden");
         return;
     }
 
@@ -184,12 +186,19 @@ static void build_row(int index)
     lv_obj_t *row = lv_obj_create(list_cont);
     lv_obj_set_size(row, LV_PCT(100), ROW_H);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_radius(row, 10, 0);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_pad_hor(row, 12, 0);
+    // Karte statt Streifen: derselbe Radius, derselbe Rand und derselbe
+    // Flaechenton wie ueberall sonst (ui_kit.h). Der feine Rand ist das, was
+    // eine Liste aus Karten von einer Liste aus Farbfeldern unterscheidet.
+    lv_obj_set_style_radius(row, RADIUS_CARD, 0);
+    lv_obj_set_style_bg_color(row, lv_color_hex(COL_SURFACE), 0);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(row, 1, 0);
+    lv_obj_set_style_border_color(row, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_border_opa(row, LV_OPA_COVER, 0);
+    lv_obj_set_style_pad_hor(row, GAP_M, 0);
     lv_obj_set_style_pad_ver(row, 0, 0);
     lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_bg_color(row, lv_color_hex(COL_ACCENT), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(row, lv_color_hex(COL_RAISED), LV_STATE_PRESSED);
     lv_obj_add_event_cb(row, preview_open_cb, LV_EVENT_CLICKED, (void *)(intptr_t)index);
 
     // Farbstreifen links: zeigt das Filament, ohne Platz fuer Text zu kosten
@@ -239,7 +248,7 @@ static void build_row(int index)
     lv_label_set_text(sub, meta);
     lv_obj_set_width(sub, text_w);
     lv_label_set_long_mode(sub, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(sub, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(sub, &bb_font_12, 0);
     lv_obj_set_style_text_color(sub,
                                 lv_color_hex(is_starting(item.id) ? COL_OK
                                              : (has_slot ? COL_MUTED : COL_WARN)), 0);
@@ -262,7 +271,7 @@ static void build_row(int index)
     lv_obj_t *del = lv_button_create(row);
     lv_obj_set_size(del, DEL_SIZE, DEL_SIZE);
     lv_obj_align(del, LV_ALIGN_RIGHT_MID, -(PLAY_SIZE + 8), 0);
-    lv_obj_set_style_radius(del, 10, 0);
+    lv_obj_set_style_radius(del, RADIUS_CTRL, 0);
     lv_obj_set_style_bg_color(del, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(del, delete_cb, LV_EVENT_CLICKED, (void *)(intptr_t)index);
     if (locked) lv_obj_add_state(del, LV_STATE_DISABLED);
@@ -284,7 +293,7 @@ static void rebuild_list()
     if (total > shown_count) {
         lv_obj_t *more = lv_label_create(list_cont);
         lv_label_set_text_fmt(more, "... und %d weitere", total - shown_count);
-        lv_obj_set_style_text_font(more, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(more, &bb_font_12, 0);
         lv_obj_set_style_text_color(more, lv_color_hex(COL_MUTED), 0);
         lv_obj_set_style_pad_left(more, 18, 0);
         lv_obj_set_style_pad_top(more, 4, 0);
@@ -342,7 +351,7 @@ void queue_screen_create(lv_obj_t *parent)
 
     title_lbl = lv_label_create(parent);
     lv_label_set_text(title_lbl, LV_SYMBOL_LIST "  Warteschlange");
-    lv_obj_set_style_text_font(title_lbl, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 14);
 
     list_cont = lv_obj_create(parent);
@@ -356,7 +365,7 @@ void queue_screen_create(lv_obj_t *parent)
     lv_obj_set_scroll_dir(list_cont, LV_DIR_VER);
 
     empty_lbl = lv_label_create(parent);
-    lv_label_set_text(empty_lbl, "Keine Auftraege in der Warteschlange.");
+    lv_label_set_text(empty_lbl, "Keine Aufträge in der Warteschlange.");
     lv_obj_set_style_text_color(empty_lbl, lv_color_hex(COL_MUTED), 0);
     lv_obj_align(empty_lbl, LV_ALIGN_CENTER, 0, -20);
 
@@ -364,7 +373,7 @@ void queue_screen_create(lv_obj_t *parent)
     lv_label_set_text(message_lbl, "");
     lv_obj_set_width(message_lbl, CONTENT_W);
     lv_label_set_long_mode(message_lbl, LV_LABEL_LONG_DOT);
-    lv_obj_set_style_text_font(message_lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(message_lbl, &bb_font_12, 0);
     lv_obj_align(message_lbl, LV_ALIGN_BOTTOM_LEFT, PAD + 4, -8);
 
     ui_timer = lv_timer_create(ui_tick_cb, 500, nullptr);

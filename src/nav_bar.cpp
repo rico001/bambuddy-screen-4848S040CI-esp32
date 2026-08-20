@@ -4,6 +4,7 @@
 #include "ui_layout.h"
 #include "ui_nav.h"
 #include "ui_theme.h"
+#include "ui_font.h"
 
 static constexpr int BTN_W = SCREEN_W / NAV_TILE_COUNT;
 
@@ -34,7 +35,7 @@ struct nav_entry_t {
 static const nav_entry_t ENTRIES[NAV_TILE_COUNT] = {
     {ICON_SPOOL, nullptr, "AMS"},
     {ICON_IMAGE, nullptr, "Status"},
-    {ICON_SYMBOL, LV_SYMBOL_LIST, "Auftraege"},
+    {ICON_SYMBOL, LV_SYMBOL_LIST, "Aufträge"},
     {ICON_SYMBOL, LV_SYMBOL_DIRECTORY, "Archiv"},
     {ICON_SYMBOL, LV_SYMBOL_SETTINGS, "System"},
 };
@@ -44,6 +45,7 @@ static const nav_entry_t ENTRIES[NAV_TILE_COUNT] = {
 // bewirken — die haben keine.
 struct nav_button_t {
     lv_obj_t *btn;
+    lv_obj_t *pill; // Hervorhebung hinter Symbol und Text
     lv_obj_t *text;
     lv_obj_t *symbol; // ICON_SYMBOL
     lv_obj_t *image;  // ICON_IMAGE
@@ -99,7 +101,16 @@ void nav_bar_create(lv_obj_t *parent)
     lv_obj_set_style_radius(bar, 0, 0);
     lv_obj_set_style_border_width(bar, 0, 0);
     lv_obj_set_style_pad_all(bar, 0, 0);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(0x14181C), 0);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(COL_BG), 0);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
+
+    // Haarlinie nach oben statt eigener Flaechenfarbe — dieselbe Trennung wie
+    // bei der Statusleiste, damit die Kachel dazwischen der einzige Bereich
+    // mit eigener Farbe bleibt.
+    lv_obj_set_style_border_side(bar, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_width(bar, 1, 0);
+    lv_obj_set_style_border_color(bar, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_border_opa(bar, LV_OPA_COVER, 0);
 
     for (int i = 0; i < NAV_TILE_COUNT; i++) {
         nav_button_t &nb = buttons[i];
@@ -113,9 +124,26 @@ void nav_bar_create(lv_obj_t *parent)
         lv_obj_set_style_radius(nb.btn, 0, 0);
         lv_obj_set_style_border_width(nb.btn, 0, 0);
         lv_obj_set_style_pad_all(nb.btn, 0, 0);
-        lv_obj_set_style_bg_color(nb.btn, lv_color_hex(COL_ACCENT), 0);
         lv_obj_set_style_bg_opa(nb.btn, LV_OPA_TRANSP, 0);
         lv_obj_add_event_cb(nb.btn, button_cb, LV_EVENT_CLICKED, (void *)(intptr_t)i);
+
+        // Die Hervorhebung ist eine eigene, abgerundete Flaeche statt einer
+        // eingefaerbten Knopfflaeche: Ueber die volle Knopfbreite gefaerbt
+        // stossen die Nachbarn ohne Fuge aneinander, und die Leiste wirkt wie
+        // eine Tabelle. Als Kapsel mit Luft ringsum sieht man, was gewaehlt
+        // ist, ohne dass es die Leiste zerteilt.
+        //
+        // Zuerst angelegt und damit hinter Symbol und Beschriftung.
+        nb.pill = lv_obj_create(nb.btn);
+        lv_obj_set_size(nb.pill, BTN_W - 2 * GAP_S, NAV_BAR_H - GAP_S);
+        lv_obj_center(nb.pill);
+        lv_obj_remove_flag(nb.pill, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_remove_flag(nb.pill, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_set_style_radius(nb.pill, RADIUS_CTRL, 0);
+        lv_obj_set_style_border_width(nb.pill, 0, 0);
+        lv_obj_set_style_pad_all(nb.pill, 0, 0);
+        lv_obj_set_style_bg_color(nb.pill, lv_color_hex(COL_ACCENT), 0);
+        lv_obj_set_style_bg_opa(nb.pill, LV_OPA_TRANSP, 0);
 
         // Symbol oben, Beschriftung darunter. Das Symbol allein waere bei
         // Archiv und System nicht eindeutig, die Beschriftung allein bei
@@ -138,14 +166,14 @@ void nav_bar_create(lv_obj_t *parent)
         default:
             nb.symbol = lv_label_create(nb.btn);
             lv_label_set_text(nb.symbol, ENTRIES[i].symbol);
-            lv_obj_set_style_text_font(nb.symbol, &lv_font_montserrat_16, 0);
+            lv_obj_set_style_text_font(nb.symbol, &bb_font_16, 0);
             lv_obj_align(nb.symbol, LV_ALIGN_TOP_MID, 0, 3);
             break;
         }
 
         nb.text = lv_label_create(nb.btn);
         lv_label_set_text(nb.text, ENTRIES[i].label);
-        lv_obj_set_style_text_font(nb.text, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_text_font(nb.text, &bb_font_12, 0);
         lv_obj_align(nb.text, LV_ALIGN_BOTTOM_MID, 0, -3);
     }
 }
@@ -164,7 +192,7 @@ void nav_bar_set_active(int index)
 
         // Nur Farben wechseln, keine Groessen: Eine Groessenaenderung wuerde
         // die Nachbarknoepfe mit neu zeichnen lassen.
-        lv_obj_set_style_bg_opa(nb.btn, on ? LV_OPA_20 : LV_OPA_TRANSP, 0);
+        if (nb.pill) lv_obj_set_style_bg_opa(nb.pill, on ? LV_OPA_20 : LV_OPA_TRANSP, 0);
 
         if (nb.text) lv_obj_set_style_text_color(nb.text, color, 0);
         if (nb.symbol) lv_obj_set_style_text_color(nb.symbol, color, 0);
