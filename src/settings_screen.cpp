@@ -12,10 +12,12 @@
 #include "bambuddy_smart_plugs.h"
 #include "ota_service.h"
 #include "screensaver.h"
+#include "ui_color_picker.h"
 #include "ui_dialog.h"
 #include "ui_kit.h"
 #include "ui_layout.h"
 #include "ui_theme.h"
+#include "ui_util.h"
 #include "ui_font.h"
 
 // ============================================================
@@ -114,10 +116,16 @@ static lv_obj_t *brightness_value_lbl;
 static lv_obj_t *time_row_lbl;
 static lv_obj_t *ota_switch;
 static lv_obj_t *ota_row_lbl;
+static lv_obj_t *primary_swatch;
 
 // Dunkel ist Standard: Das Geraet haengt an der Wand, oft in einem Raum
 // ohne Deckenlicht. Ein weisser 480x480-Bildschirm blendet dort.
 static bool dark_mode = true;
+
+// Akzentfarbe. Aus ihr leitet ui_theme.h die Flaechen, Linien und den
+// Zeichenregen ab — sie ist der Grundton des Geraets, nicht bloss die Farbe
+// der Knoepfe.
+static uint32_t primary_color = COL_PRIMARY_DEFAULT;
 static bool tls_verify = true;
 // Standard: an. Ein versehentlicher Start am laufenden Drucker kostet im
 // schlimmsten Fall ein Werkstueck und eine Duese — wer die Sperre nicht will,
@@ -190,6 +198,7 @@ static void load_settings()
 {
     prefs.begin("settings", true);
     dark_mode = prefs.getBool("dark", true);
+    primary_color = (uint32_t)prefs.getUInt("primary", COL_PRIMARY_DEFAULT);
     tls_verify = prefs.getBool("tls", true);
     start_guard = prefs.getBool("startguard", true);
     log_print_start = prefs.getBool("logstart", true);
@@ -220,6 +229,7 @@ static void save_settings()
 {
     prefs.begin("settings", false);
     prefs.putBool("dark", dark_mode);
+    prefs.putUInt("primary", primary_color);
     prefs.putBool("tls", tls_verify);
     prefs.putBool("startguard", start_guard);
     prefs.putBool("logstart", log_print_start);
@@ -829,6 +839,33 @@ static void dark_restart_confirmed(void *)
     lv_async_call(dark_restart_async, nullptr);
 }
 
+// Farbe gewaehlt: speichern und neu starten — wie beim Farbschema. Die
+// Screens tragen ihre Farben in den Objekten, ein Wechsel zur Laufzeit
+// faerbte nur die Haelfte.
+static void primary_restart_async(void *)
+{
+    bambuddy_hms_flush_now();
+    delay(300);
+    ESP.restart();
+}
+
+static void primary_picked(uint32_t rgb, void *)
+{
+    if (rgb == primary_color) return;
+
+    primary_color = rgb;
+    save_settings();
+
+    if (primary_swatch) ui_set_bg_color(primary_swatch, rgb);
+    lv_async_call(primary_restart_async, nullptr);
+}
+
+static void primary_row_cb(lv_event_t *)
+{
+    if (ui_color_picker_is_open()) return;
+    ui_color_picker_open("Akzentfarbe", primary_color, primary_picked, nullptr);
+}
+
 static void dark_switch_cb(lv_event_t *)
 {
     // Schalter zuruecksetzen: Erst der Neustart macht die Wahl wahr, und bis
@@ -958,7 +995,9 @@ void settings_apply_saved()
     load_settings();
 
     // Vor apply_theme(): Die Token in ui_theme.h speisen sowohl die Screens
-    // als auch die beiden Farben, die das LVGL-Theme bekommt.
+    // als auch die beiden Farben, die das LVGL-Theme bekommt. Erst die
+    // Akzentfarbe setzen — von ihr haengt der Rest ab.
+    ui_theme_set_primary(primary_color);
     ui_theme_set_dark(dark_mode);
     apply_theme();
     apply_brightness();
@@ -1007,6 +1046,20 @@ void settings_screen_create(lv_obj_t *parent)
     lv_obj_set_size(dark_switch, 58, 32);
     if (dark_mode) lv_obj_add_state(dark_switch, LV_STATE_CHECKED);
     lv_obj_add_event_cb(dark_switch, dark_switch_cb, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    lv_obj_t *color_row = settings_add_row(LV_SYMBOL_TINT, "Akzentfarbe",
+                                           "Faerbt Hervorhebungen, Flaechen und den Schoner");
+    lv_obj_add_flag(color_row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(color_row, primary_row_cb, LV_EVENT_CLICKED, nullptr);
+
+    primary_swatch = lv_obj_create(color_row);
+    lv_obj_set_size(primary_swatch, 46, 32);
+    lv_obj_remove_flag(primary_swatch, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(primary_swatch, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_style_radius(primary_swatch, RADIUS_CTRL, 0);
+    lv_obj_set_style_border_width(primary_swatch, 1, 0);
+    lv_obj_set_style_border_color(primary_swatch, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_bg_color(primary_swatch, lv_color_hex(primary_color), 0);
 
     lv_obj_t *off_row = settings_add_row(LV_SYMBOL_POWER, "Bildschirm aus",
                                          "Nach Untätigkeit abschalten");
@@ -1180,6 +1233,7 @@ void settings_screen_destroy()
     time_row_lbl = nullptr;
     ota_switch = nullptr;
     ota_row_lbl = nullptr;
+    primary_swatch = nullptr;
     edit_title = nullptr;
     edit_ta = nullptr;
     edit_kb = nullptr;

@@ -35,6 +35,25 @@
 void ui_theme_set_dark(bool dark);
 bool ui_theme_is_dark();
 
+// --- Akzentfarbe -----------------------------------------------------------
+//
+// Aus ihr leitet sich fast alles ab: die drei Flaechenebenen, die Linien, die
+// Textfarben und der Zeichenregen des Bildschirmschoners. Sie ist nicht bloss
+// die Farbe der Knoepfe, sondern der Grundton des Geraets — dunkelblau als
+// Hintergrund entsteht aus demselben Wert wie das Blau der Hervorhebung.
+//
+// Was sie nicht anfasst: die Bedeutungsfarben. Gruen heisst weiterhin "laeuft",
+// rot "Fehler", orange "Steckdose" — die haengen an ihrer Aussage und nicht am
+// Geschmack.
+//
+// Wie beim Farbschema gilt der neue Wert erst nach einem Neustart: Die Screens
+// tragen ihre Farben in den Objekten.
+void ui_theme_set_primary(uint32_t rgb);
+uint32_t ui_theme_primary();
+
+// Standardwert, falls nichts gespeichert ist.
+static constexpr uint32_t COL_PRIMARY_DEFAULT = 0x3B82F6;
+
 // --- Flaechen -------------------------------------------------------------
 // Drei Ebenen, von unten nach oben heller. Mehr braucht es nicht: Wer eine
 // vierte einfuehrt, unterscheidet Toene, die man auf diesem Panel bei 30 %
@@ -56,6 +75,22 @@ extern uint32_t COL_ACCENT;  // Hervorhebung, aktiver Wert
 extern uint32_t COL_NEUTRAL; // zurueckhaltender Knopf
 extern uint32_t COL_PLUG;    // Smart Plugs, ueberall gleich
 extern uint32_t COL_JOG;     // Jog-Steuerung, ueberall gleich
+
+// --- Bildschirmschoner ----------------------------------------------------
+// Der Zeichenregen faellt in der Akzentfarbe: der Kopf fast weiss, dahinter
+// vier Stufen bis zur Farbe selbst. Feste Werte gehen hier nicht mehr — sie
+// haengen an der eingestellten Farbe.
+static constexpr int COL_RAIN_STEPS = 4;
+extern uint32_t COL_RAIN_HEAD;
+extern uint32_t COL_RAIN[COL_RAIN_STEPS];
+
+// Die Toene der Uhr-Tafel im Schoner. Sie sind immer dunkel, auch im hellen
+// Schema: Der Schoner liegt auf Schwarz, und ein weiss leuchtender
+// 480x480-Bildschirm um drei Uhr nachts waere sein Gegenteil.
+extern uint32_t COL_SAVER_PANEL; // Flaeche der Tafel
+extern uint32_t COL_SAVER_PILL;  // Kapsel darauf
+extern uint32_t COL_SAVER_TRACK; // Grund des Fortschrittsbalkens
+extern uint32_t COL_SAVER_MUTED; // Datumszeile
 
 // --- Masse ----------------------------------------------------------------
 // Eine Stufenleiter statt frei gewaehlter Zahlen: Abstaende, die sich um zwei
