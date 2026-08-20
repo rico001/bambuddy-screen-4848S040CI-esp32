@@ -221,19 +221,28 @@ void ui_color_picker_open(const char *title, uint32_t start_rgb,
     lv_slider_set_value(wheel_slider, wheel_val, LV_ANIM_OFF);
     lv_obj_add_event_cb(wheel_slider, wheel_slider_cb, LV_EVENT_VALUE_CHANGED, nullptr);
 
+    // Vorschau und Knoepfe stehen in einer Reihe am unteren Rand.
+    //
+    // Verankert wird an der Unterkante, nicht an einer Zahl von oben: Der
+    // Abstand von 332 stammte aus einer Zeit mit anderen Hoehen darueber und
+    // liess die Reihe seither in der Luft haengen, mit hundert Pixeln Leere
+    // darunter. Von unten gemessen bleibt sie da, wo sie hingehoert, auch
+    // wenn sich am Farbrad oder am Regler noch etwas aendert.
+    constexpr int ROW_H = 46;
+
     wheel_preview = lv_obj_create(wheel_overlay);
-    lv_obj_set_size(wheel_preview, 96, 56);
-    lv_obj_align(wheel_preview, LV_ALIGN_TOP_LEFT, PAD, 332);
+    lv_obj_set_size(wheel_preview, 96, ROW_H);
+    lv_obj_align(wheel_preview, LV_ALIGN_BOTTOM_LEFT, PAD, -PAD);
     lv_obj_remove_flag(wheel_preview, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_radius(wheel_preview, RADIUS_CTRL, 0);
     lv_obj_set_style_border_width(wheel_preview, 2, 0);
     lv_obj_set_style_border_color(wheel_preview, lv_color_hex(COL_LINE), 0);
     wheel_update_preview();
 
-    make_button(wheel_overlay, 150, 56, LV_ALIGN_TOP_LEFT, PAD + 104, 332, COL_NEUTRAL,
-                "Abbrechen", wheel_cancel_cb);
-    make_button(wheel_overlay, CONTENT_W - 104 - 158, 56, LV_ALIGN_TOP_RIGHT, -PAD, 332,
-                COL_OK, "Übernehmen", wheel_ok_cb);
+    make_button(wheel_overlay, 150, ROW_H, LV_ALIGN_BOTTOM_LEFT, PAD + 104, -PAD,
+                COL_NEUTRAL, "Abbrechen", wheel_cancel_cb);
+    make_button(wheel_overlay, CONTENT_W - 104 - 158, ROW_H, LV_ALIGN_BOTTOM_RIGHT,
+                -PAD, -PAD, COL_OK, "Übernehmen", wheel_ok_cb);
 }
 
 
