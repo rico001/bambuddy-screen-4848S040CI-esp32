@@ -47,8 +47,22 @@ static constexpr uint32_t SAVER_TEXT = 0xE8ECF2; // wie COL_TEXT (dunkel)
 // der die Fallrichtung ueberhaupt erkennbar macht. Feste Werte, weil der
 // Schoner immer auf Schwarz liegt und dem hellen Schema nicht folgen darf.
 static constexpr uint32_t RAIN_HEAD = 0xD6E6FF;   // Kopf der Spalte
-static constexpr uint32_t RAIN_TRAIL = 0x2450A8;  // Schweif dahinter
 static constexpr uint32_t RAIN_ACCENT = 0x3B82F6; // wie COL_ACCENT (dunkel)
+
+// Der Schweif verlaeuft vom Kopf weg ins Blau: hell direkt hinter dem Kopf,
+// dann in vier Stufen dunkler. Ein einfarbiger Schweif sieht aus wie ein
+// fallendes Wort; erst das Abklingen macht daraus eine Spur.
+//
+// Die Stufen sind fest und nicht gerechnet: Eine Interpolation im RGB-Raum
+// kippt zwischen Weiss und Blau ins Graue, von Hand gesetzte Werte bleiben
+// bunt.
+static constexpr int RAIN_SEGMENTS = 4;
+static constexpr uint32_t RAIN_TRAIL[RAIN_SEGMENTS] = {
+    0x9CC0F0, // direkt hinter dem Kopf
+    0x5E8ED8,
+    0x3564BC,
+    0x2450A8, // Ende der Spur
+};
 
 // Tafel im Regen: sehr dunkles Blau statt Schwarz, damit sie als Teil des
 // Bildes wirkt und nicht als Loch darin.
@@ -359,6 +373,21 @@ static void clock_build(bool on_panel)
 // nur ein Teil von ihnen. Ein gleichzeitiger Schritt aller Spalten waere ein
 // voller Bildaufbau — genau das, was auf diesem Board sichtbar zuckt.
 
+// Wieviel Regen vertraegt das Geraet?
+//
+// Jedes bewegte Objekt kostet LVGL pro Bild einen Zeichenauftrag, und diese
+// Auftraege legt es im internen RAM an — demselben Speicher, aus dem sich der
+// WLAN-Stack bedient. Bei Spalten x (Abschnitte + 1) Beschriftungen ist das
+// die groesste Dauerlast, die die Oberflaeche erzeugt:
+//
+//   20 Spalten, 4 Abschnitte -> 100 Objekte   (aktuell)
+//   14 Spalten, 4 Abschnitte ->  70 Objekte
+//   20 Spalten, 2 Abschnitte ->  60 Objekte
+//   20 Spalten, 1 Abschnitt  ->  40 Objekte   (Stand vor dem Farbverlauf)
+//
+// Wer hier dreht, sollte danach die Zeile "[MQTT] ... intern frei ..." im
+// Log beobachten: Faellt sie waehrend des Schoners unter etwa 20 KB, reissen
+// Verbindungen ab.
 static constexpr int MATRIX_COLS = 20;
 static constexpr int MATRIX_COL_W = SCREEN_W / MATRIX_COLS; // 24
 static constexpr int MATRIX_LINE_H = 28;                    // Rasterhoehe je Zeichen
@@ -375,13 +404,13 @@ static const char MATRIX_CHARS[] = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ<>*+=";
 static constexpr int MATRIX_CHAR_COUNT = sizeof(MATRIX_CHARS) - 1;
 
 struct matrix_col_t {
-    lv_obj_t *trail;
+    lv_obj_t *seg[RAIN_SEGMENTS]; // Schweif, von hell nach dunkel
     lv_obj_t *head;
     int16_t row;     // Zeile des hellen Kopfes, darf negativ sein
     uint8_t length;  // Laenge des Schweifs in Zeichen
     uint8_t period;  // alle wie viel Ticks ein Schritt?
     uint8_t counter;
-    char text[2 * MATRIX_TRAIL_MAX]; // je Zeichen ein Zeilenumbruch
+    char text[RAIN_SEGMENTS][2 * MATRIX_TRAIL_MAX]; // je Zeichen ein Umbruch
     char head_text[2];
 };
 
@@ -414,15 +443,34 @@ static void matrix_reset(matrix_col_t &c)
     c.row = -(int16_t)random(MATRIX_ROWS);
 }
 
+// Den Schweif auf die Abschnitte verteilen und setzen.
+//
+// Der erste Abschnitt beginnt eine Zeile ueber dem Kopf, jeder weitere
+// schliesst an. Bleibt fuer einen Abschnitt nichts uebrig — kurze Schweife
+// gibt es —, bekommt er einen leeren Text und verschwindet.
 static void matrix_write_trail(matrix_col_t &c)
 {
-    size_t n = 0;
-    for (uint8_t i = 0; i < c.length && n + 2 < sizeof(c.text); i++) {
-        if (i > 0) c.text[n++] = '\n';
-        c.text[n++] = matrix_random_char();
+    int remaining = c.length;
+    int above = 1; // Abstand des naechsten Zeichens ueber dem Kopf
+
+    for (int s = 0; s < RAIN_SEGMENTS; s++) {
+        const int count = remaining / (RAIN_SEGMENTS - s);
+
+        size_t n = 0;
+        for (int i = 0; i < count && n + 2 < sizeof(c.text[s]); i++) {
+            if (i > 0) c.text[s][n++] = '\n';
+            c.text[s][n++] = matrix_random_char();
+        }
+        c.text[s][n] = '\0';
+        lv_label_set_text_static(c.seg[s], c.text[s]);
+
+        // Die Beschriftung wird an ihrer obersten Zeile ausgerichtet, der
+        // Abschnitt reicht aber von oben nach unten auf den Kopf zu.
+        lv_obj_set_y(c.seg[s], (c.row - above - count + 1) * MATRIX_LINE_H);
+
+        above += count;
+        remaining -= count;
     }
-    c.text[n] = '\0';
-    lv_label_set_text_static(c.trail, c.text);
 }
 
 static void matrix_step(matrix_col_t &c)
@@ -434,8 +482,6 @@ static void matrix_step(matrix_col_t &c)
     // wie ein herunterfallendes Wort, nicht wie Matrix.
     matrix_write_trail(c);
 
-    // Der Schweif endet eine Zeile ueber dem Kopf.
-    lv_obj_set_y(c.trail, (c.row - (int16_t)c.length) * MATRIX_LINE_H);
     lv_obj_set_y(c.head, c.row * MATRIX_LINE_H);
 
     c.head_text[0] = matrix_random_char();
@@ -450,19 +496,22 @@ static void matrix_build()
         c = {};
         matrix_reset(c);
 
-        c.trail = lv_label_create(overlay);
-        lv_obj_set_style_text_font(c.trail, &bb_font_24, 0);
-        lv_obj_set_style_text_color(c.trail, lv_color_hex(RAIN_TRAIL), 0);
+        for (int s = 0; s < RAIN_SEGMENTS; s++) {
+            c.seg[s] = lv_label_create(overlay);
+            lv_obj_set_style_text_font(c.seg[s], &bb_font_24, 0);
+            lv_obj_set_style_text_color(c.seg[s], lv_color_hex(RAIN_TRAIL[s]), 0);
 
-        // Zeilenabstand aus der Schrift ableiten, nicht aus ihrer Punktgroesse:
-        // Der Schweif ist ein einziges mehrzeiliges Label, der Kopf ein
-        // eigenes, und beide werden in Schritten von MATRIX_LINE_H gesetzt.
-        // Passt der Abstand im Label nicht dazu, laeuft der Schweif dem Kopf
-        // langsam davon. Die Zeilenhoehe haengt am Zeichenvorrat — mit den
-        // Latin-1-Schnitten aus ui_font.h ist sie eine andere als vorher.
-        lv_obj_set_style_text_line_space(
-            c.trail, MATRIX_LINE_H - lv_font_get_line_height(&bb_font_24), 0);
-        lv_obj_set_x(c.trail, i * MATRIX_COL_W + 4);
+            // Zeilenabstand aus der Schrift ableiten, nicht aus ihrer
+            // Punktgroesse: Die Abschnitte sind mehrzeilige Labels, der Kopf
+            // ist ein eigenes, und alle werden in Schritten von
+            // MATRIX_LINE_H gesetzt. Passt der Abstand im Label nicht dazu,
+            // laeuft der Schweif dem Kopf langsam davon. Die Zeilenhoehe
+            // haengt am Zeichenvorrat — mit den Latin-1-Schnitten aus
+            // ui_font.h ist sie eine andere als vorher.
+            lv_obj_set_style_text_line_space(
+                c.seg[s], MATRIX_LINE_H - lv_font_get_line_height(&bb_font_24), 0);
+            lv_obj_set_x(c.seg[s], i * MATRIX_COL_W + 4);
+        }
 
         // Der Kopf ist heller als der Schweif — das ist das, was die
         // Bewegungsrichtung ueberhaupt erkennbar macht.

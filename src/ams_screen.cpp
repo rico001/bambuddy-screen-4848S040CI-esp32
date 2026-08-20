@@ -16,22 +16,22 @@ static constexpr int PAD = 12;
 static constexpr int HEADER_H = 48;
 static constexpr int SLOT_GAP = 8;
 
-// Rechts neben den Faechern steht die Kapsel mit Luftfeuchte und Temperatur.
-// Die Faecher teilen sich den Rest.
-// 54 statt 46: "32 °C" misst in bb_font_16 gut 43 Pixel, dreistellig ueber
-// 52 — mit 46 haette die Gradangabe an den Kanten geklebt. Die acht Pixel
-// gehen von den vier Faechern ab, wo sie niemand vermisst.
-static constexpr int BADGE_W = 54;
-static constexpr int SLOT_W =
-    (SCREEN_W - 4 * PAD - 3 * SLOT_GAP - BADGE_W - SLOT_GAP) / 4;
+// Die Faecher teilen sich die volle Breite: Luftfeuchte und Temperatur
+// stehen seit dem Umbau oben in der Kopfzeile, nicht mehr daneben.
+static constexpr int SLOT_W = (SCREEN_W - 4 * PAD - 3 * SLOT_GAP) / 4;
 
 // Aufbau einer Einheit von oben nach unten: Kopfzeile, Faecher, Schlauch.
 static constexpr int SLOT_Y = 54;   // Oberkante der Faecher
 static constexpr int SPOOL_W = 56;  // Rolle
 static constexpr int SPOOL_H = 68;
-static constexpr int SLOT_H = SPOOL_H + 42; // Rolle plus zweizeilige Beschriftung
-static constexpr int TUBE_DROP = 14;        // Stueck bis zur Sammelschiene
-static constexpr int UNIT_H = SLOT_Y + SLOT_H + TUBE_DROP + 30;
+// Zwei Zeilen Beschriftung, aus der Schrifthoehe gerechnet statt geraten:
+// Die Latin-1-Schnitte sind hoeher als die eingebauten von frueher, und eine
+// feste Zahl waere beim naechsten Schriftwechsel wieder daneben.
+static constexpr int LABEL_LINES = 2;
+static constexpr int SLOT_H = SPOOL_H + 12 + LABEL_LINES * 17;
+static constexpr int TUBE_DROP = 14;   // Stueck bis zur Sammelschiene
+static constexpr int HEAD_H = 42;      // Druckkopf am Abgang
+static constexpr int UNIT_H = SLOT_Y + SLOT_H + TUBE_DROP + HEAD_H;
 
 // Bedeutungsfarben kommen aus ui_theme.h. Frueher standen sie hier noch
 // einmal in eigenen Werten — dieselben Namen, leicht andere Toene. Genau das
@@ -57,13 +57,6 @@ static bambuddy_status_t shown;
 // Ladekreises.
 static uint32_t shown_pending_token = 0;
 
-static uint32_t humidity_color(int humidity)
-{
-    if (humidity < 0) return COL_MUTED;
-    if (humidity <= 40) return COL_OK;
-    if (humidity <= 60) return COL_WARN;
-    return COL_ERR;
-}
 
 static uint32_t contrast_color(uint32_t color)
 {
@@ -278,10 +271,12 @@ static void build_slot(lv_obj_t *card, const bambuddy_ams_unit_t &unit, int slot
     lv_obj_t *type = lv_label_create(slot);
     lv_obj_remove_flag(type, LV_OBJ_FLAG_CLICKABLE);
     lv_label_set_text(type, label[0] ? label : "Leer");
-    // Feste Breite UND Hoehe: nur dann kann LVGL mehrzeilig kuerzen. Namen
-    // wie "Bambu PETG Basic" passen in zwei Zeilen, laengere bekommen
-    // Punkte statt aus der Kachel zu laufen.
-    lv_obj_set_size(type, SLOT_W - 6, 30);
+    // Feste Breite UND Hoehe: nur dann bricht LVGL um und kuerzt mit
+    // Punkten. Die Hoehe ist genau zwei Zeilen — "Bambu PETG Basic" passt
+    // damit vollstaendig, "Overture Matte PLA Charcoal" bekommt am Ende
+    // seine Punkte.
+    lv_obj_set_size(type, SLOT_W - 6,
+                    LABEL_LINES * lv_font_get_line_height(&bb_font_12));
     lv_label_set_long_mode(type, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_align(type, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_font(type, &bb_font_12, 0);
@@ -330,55 +325,78 @@ static void build_manifold(lv_obj_t *card, int slot_count, int active_index,
     ui_rule(card, mid - (feeding ? 2 : 1), y, feeding ? 4 : 2, 12,
          feeding ? active_color : COL_LINE);
 
-    // Abgang: der Stutzen, an dem der Schlauch die Einheit verlaesst. Sein
-    // Kern traegt waehrend des Drucks dieselbe Farbe wie die Leitung — so
-    // endet der Weg nicht an einem grauen Kasten, sondern geht sichtbar
-    // hindurch.
-    lv_obj_t *outlet = lv_obj_create(card);
-    lv_obj_remove_flag(outlet, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(outlet, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(outlet, 26, 14);
-    lv_obj_align(outlet, LV_ALIGN_TOP_LEFT, mid - 13, y + 12);
-    lv_obj_set_style_radius(outlet, 7, 0);
-    lv_obj_set_style_border_width(outlet, 0, 0);
-    lv_obj_set_style_pad_all(outlet, 0, 0);
-    lv_obj_set_style_bg_color(outlet, lv_color_hex(COL_RAISED), 0);
+    // Der Druckkopf am Ende der Leitung: Heizblock und darunter die Duese.
+    //
+    // Der Kegel entsteht aus drei immer schmaleren Streifen. Eine echte
+    // Dreiecksform gaebe es in LVGL nur ueber lv_line — und das braeuchte ein
+    // Punktfeld, das leben muss, solange die Linie lebt. Bei einem Screen,
+    // der sich staendig neu baut, sind drei Rechtecke die ehrlichere Loesung,
+    // und bei dieser Groesse sieht man den Unterschied ohnehin nicht.
+    //
+    // Waehrend des Drucks traegt die Duesenspitze die Farbe des Filaments:
+    // Der Weg endet dann nicht an einem grauen Kasten, sondern laeuft
+    // sichtbar hindurch.
+    const uint32_t head_color = feeding ? active_color : COL_LINE;
 
-    if (feeding) {
-        lv_obj_t *core = lv_obj_create(outlet);
-        lv_obj_remove_flag(core, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_remove_flag(core, LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_size(core, 8, 8);
-        lv_obj_center(core);
-        lv_obj_set_style_radius(core, 4, 0);
-        lv_obj_set_style_border_width(core, 0, 0);
-        lv_obj_set_style_pad_all(core, 0, 0);
-        lv_obj_set_style_bg_color(core, lv_color_hex(active_color), 0);
+    lv_obj_t *block = lv_obj_create(card);
+    lv_obj_remove_flag(block, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(block, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(block, 26, 24);
+    lv_obj_align(block, LV_ALIGN_TOP_LEFT, mid - 13, y + 6);
+    lv_obj_set_style_radius(block, 4, 0);
+    lv_obj_set_style_border_width(block, 0, 0);
+    lv_obj_set_style_pad_all(block, 0, 0);
+    lv_obj_set_style_bg_color(block, lv_color_hex(COL_RAISED), 0);
+
+    // Fenster im Heizblock, rund: So liest es sich als Blick auf das
+    // Filament im Kopf und nicht als Schlitz — und waehrend des Drucks
+    // traegt genau dieser Punkt die Materialfarbe.
+    lv_obj_t *slot_window = lv_obj_create(block);
+    lv_obj_remove_flag(slot_window, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(slot_window, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(slot_window, 10, 10);
+    lv_obj_center(slot_window);
+    lv_obj_set_style_radius(slot_window, 5, 0);
+    lv_obj_set_style_border_width(slot_window, 0, 0);
+    lv_obj_set_style_pad_all(slot_window, 0, 0);
+    lv_obj_set_style_bg_color(slot_window, lv_color_hex(head_color), 0);
+
+    static constexpr int CONE_W[] = {14, 9, 5};
+    int cone_y = y + 30;
+    for (int i = 0; i < 3; i++) {
+        ui_rule(card, mid - CONE_W[i] / 2, cone_y, CONE_W[i], 2,
+                i == 2 ? head_color : COL_RAISED);
+        cone_y += 2;
     }
 }
 
-// Luftfeuchte und Temperatur als stehende Kapsel, mittig zu den Faechern.
+// Luftfeuchte und Temperatur als waagerechte Kapsel in der Kopfzeile.
 //
-// Frueher standen beide Werte als Text in der Kopfzeile. Dort waren sie
-// richtig, aber unauffaellig: zwei Zahlen neben dem Namen, die man erst
-// suchen musste. Als Kapsel neben den Spulen sind sie das, was sie sind —
-// der Zustand der Einheit, nicht eine Eigenschaft ihres Namens.
+// Sie stand vorher hochkant neben den Faechern und nahm ihnen Breite weg.
+// Oben rechts gehoert sie zum Namen der Einheit — beides beschreibt die
+// Einheit als Ganzes, waehrend darunter die einzelnen Faecher stehen.
 static void build_badge(lv_obj_t *card, const bambuddy_ams_unit_t &unit)
 {
     lv_obj_t *badge = lv_obj_create(card);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(badge, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_size(badge, BADGE_W, SLOT_H);
-    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -PAD, SLOT_Y);
-    lv_obj_set_style_radius(badge, BADGE_W / 2, 0);
+    lv_obj_set_size(badge, LV_SIZE_CONTENT, 34);
+    lv_obj_align(badge, LV_ALIGN_TOP_RIGHT, -GAP_L, 12);
+    lv_obj_set_style_radius(badge, RADIUS_CTRL, 0);
     lv_obj_set_style_border_width(badge, 0, 0);
-    lv_obj_set_style_pad_all(badge, 0, 0);
+    lv_obj_set_style_pad_hor(badge, GAP_M, 0);
+    lv_obj_set_style_pad_ver(badge, 0, 0);
+    lv_obj_set_style_pad_column(badge, GAP_S, 0);
     lv_obj_set_style_bg_color(badge, lv_color_hex(COL_RAISED), 0);
+    lv_obj_set_flex_flow(badge, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(badge, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
 
+    // Blau wie in der uebrigen Oberflaeche: Der Tropfen sagt "Luftfeuchte",
+    // nicht "Achtung".
     lv_obj_t *drop = lv_label_create(badge);
     lv_label_set_text(drop, LV_SYMBOL_TINT);
-    lv_obj_set_style_text_color(drop, lv_color_hex(humidity_color(unit.humidity)), 0);
-    lv_obj_align(drop, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_set_style_text_color(drop, lv_color_hex(COL_ACCENT), 0);
 
     lv_obj_t *humidity = lv_label_create(badge);
     if (unit.humidity >= 0) {
@@ -388,15 +406,22 @@ static void build_badge(lv_obj_t *card, const bambuddy_ams_unit_t &unit)
     }
     lv_obj_set_style_text_font(humidity, &bb_font_16, 0);
     lv_obj_set_style_text_color(humidity, lv_color_hex(COL_TEXT), 0);
-    lv_obj_align(humidity, LV_ALIGN_TOP_MID, 0, 32);
 
-    // Trennlinie statt zweier Kapseln: Es sind zwei Werte derselben Einheit.
-    ui_rule(badge, 8, SLOT_H / 2 + 2, BADGE_W - 16, 1, COL_LINE);
+    // Senkrechter Strich zwischen den beiden Werten: Es sind zwei Angaben
+    // derselben Einheit, keine zwei Kapseln.
+    lv_obj_t *divider = lv_obj_create(badge);
+    lv_obj_remove_flag(divider, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(divider, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_size(divider, 1, 18);
+    lv_obj_set_style_radius(divider, 0, 0);
+    lv_obj_set_style_border_width(divider, 0, 0);
+    lv_obj_set_style_pad_all(divider, 0, 0);
+    lv_obj_set_style_bg_color(divider, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, 0);
 
     lv_obj_t *thermo = lv_label_create(badge);
     lv_label_set_text(thermo, BB_SYMBOL_TEMP);
     lv_obj_set_style_text_color(thermo, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(thermo, LV_ALIGN_BOTTOM_MID, 0, -34);
 
     lv_obj_t *temp = lv_label_create(badge);
     if (unit.temperature_known) {
@@ -406,7 +431,6 @@ static void build_badge(lv_obj_t *card, const bambuddy_ams_unit_t &unit)
     }
     lv_obj_set_style_text_font(temp, &bb_font_16, 0);
     lv_obj_set_style_text_color(temp, lv_color_hex(COL_TEXT), 0);
-    lv_obj_align(temp, LV_ALIGN_BOTTOM_MID, 0, -10);
 }
 
 static void build_unit(const bambuddy_ams_unit_t &unit)

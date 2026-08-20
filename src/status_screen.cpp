@@ -71,6 +71,7 @@ static lv_obj_t *remaining_lbl;
 static lv_obj_t *queue_lbl;
 
 static lv_obj_t *auto_off_btn;
+static lv_obj_t *cam_btn;
 
 static lv_obj_t *nozzle_value_lbl;
 static lv_obj_t *bed_value_lbl;
@@ -357,8 +358,22 @@ static void update_status_fields()
     ui_set_text(state_lbl, text);
     ui_set_text_color(state_lbl, state_color);
 
-    const bool show_job = status.job[0] && !stale_failure;
-    ui_set_text(job_lbl, show_job ? status.job : "Kein Auftrag");
+    // Den Auftragsnamen nur zeigen, solange er etwas beschreibt.
+    //
+    // Der Drucker meldet subtask_name auch dann weiter, wenn er laengst
+    // wieder im Ruhezustand steht — auf dem Display stand deshalb unter
+    // "Bereit" noch der Name des letzten Drucks, als liege er an. Nach dem
+    // Ende gehoert er noch dazu ("Fertig: bank-fuss"), im Ruhezustand nicht
+    // mehr.
+    const bool finished = strcasecmp(status.state, "FINISH") == 0 ||
+                          strcasecmp(status.state, "finished") == 0;
+    const bool job_relevant = job_active || (finished && !stale_failure) ||
+                              (failed && !stale_failure);
+
+    // Ohne Auftrag bleibt die Zeile leer statt "Kein Auftrag" zu behaupten:
+    // Dass gerade nichts laeuft, sagt der Zustand darueber schon.
+    const bool show_job = status.job[0] && job_relevant;
+    ui_set_text(job_lbl, show_job ? status.job : "");
 
     // Schichtzaehler nur bei laufendem Auftrag: nach Abbruch oder Ende
     // beschreibt er nichts mehr, was gerade passiert.
@@ -514,13 +529,27 @@ static void update_controls()
 
     // Die Geschwindigkeit laesst sich nur waehrend eines Drucks aendern.
     set_enabled(speed_btn, running || paused);
-    ui_set_text_fmt(speed_btn_lbl, LV_SYMBOL_REFRESH "\n%s",
+    ui_set_text_fmt(speed_btn_lbl, BB_SYMBOL_SPEED "\n%s",
                     speed_name(status.speed_level));
 
     set_enabled(pause_btn, running);
     set_enabled(resume_btn, paused);
     set_enabled(stop_btn, has_job);
     set_enabled(light_btn, reachable && !light_switching);
+
+    // Ohne erreichbaren Drucker gibt es kein Livebild — der Knopf fuehrte
+    // sonst in eine Ansicht, die nur "Kamera nicht erreichbar" zeigt.
+    // Gesperrt heisst hier zusaetzlich blasser: Der Knopf sitzt auf dem
+    // Modellbild, wo die uebliche graue Flaeche des Baukastens nicht passt.
+    // Nur bei echter Aenderung setzen: lv_obj_set_style_bg_opa() vergleicht
+    // nicht und macht das Objekt sonst zweimal je Sekunde schmutzig.
+    static int shown_cam_opa = -1;
+    const int cam_opa = reachable ? LV_OPA_60 : LV_OPA_20;
+    if (cam_opa != shown_cam_opa) {
+        shown_cam_opa = cam_opa;
+        set_enabled(cam_btn, reachable);
+        lv_obj_set_style_bg_opa(cam_btn, (lv_opa_t)cam_opa, 0);
+    }
 
     const bool light_on = have_status && status.chamber_light;
     // Zweizeilig wie alle Knoepfe der Reihe: Symbol oben, Beschriftung
@@ -610,7 +639,7 @@ static void speed_chosen(int index, void *)
     // alte Stufe zeigt. Der naechste Status korrigiert es, falls der
     // Drucker den Wechsel ablehnt.
     status.speed_level = level;
-    ui_set_text_fmt(speed_btn_lbl, LV_SYMBOL_REFRESH "\n%s", speed_name(level));
+    ui_set_text_fmt(speed_btn_lbl, BB_SYMBOL_SPEED "\n%s", speed_name(level));
 
     bambuddy_api_send_speed(level);
 }
@@ -951,7 +980,7 @@ static void build_job_card(lv_obj_t *parent)
 
     // Kamera-Knopf in der Ecke des Bildes — dort, wo man das Livebild
     // erwartet, und ohne der Steuerungsreihe Platz wegzunehmen.
-    lv_obj_t *cam_btn = lv_button_create(card);
+    cam_btn = lv_button_create(card);
     lv_obj_set_size(cam_btn, 40, 34);
     lv_obj_align(cam_btn, LV_ALIGN_TOP_LEFT, GAP_L + COVER_SIZE - 46,
                  GAP_L + COVER_SIZE - 40);
@@ -1094,7 +1123,7 @@ static void build_controls(lv_obj_t *parent)
                                "Licht an", COL_WARN, light_cb);
     light_btn_lbl = lv_obj_get_child(light_btn, 0);
 
-    speed_btn = control_button(parent, PAD + 4 * (CTRL_W + CTRL_GAP), LV_SYMBOL_REFRESH,
+    speed_btn = control_button(parent, PAD + 4 * (CTRL_W + CTRL_GAP), BB_SYMBOL_SPEED,
                                "Tempo", COL_ACCENT, speed_cb);
     speed_btn_lbl = lv_obj_get_child(speed_btn, 0);
 }
