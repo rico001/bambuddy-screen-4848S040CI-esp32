@@ -880,7 +880,10 @@ static void build(const char *slot_label)
     title_lbl = lv_label_create(overlay);
     lv_label_set_text(title_lbl, slot_label);
     lv_obj_set_style_text_font(title_lbl, &bb_font_16, 0);
-    lv_obj_set_width(title_lbl, SCREEN_W - (PAD + 4) - (44 + PAD) - 8);
+    // Die Breite hing am Schliessknopf, der rechts daneben sass. Den gibt es
+    // nicht mehr — Abbrechen unten tut dasselbe —, also darf der Titel bis
+    // zum Rand laufen.
+    lv_obj_set_width(title_lbl, CONTENT_W - 8);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(title_lbl, LV_ALIGN_TOP_LEFT, PAD + 4, 8);
 
@@ -904,9 +907,6 @@ static void build(const char *slot_label)
     temp_caption = make_caption(overlay, "Temp", PAD + 4, TEMP_LINE_Y);
     temp_lbl = make_value(overlay, PAD + 52, TEMP_LINE_Y,
                           SCREEN_W - (PAD + 52) - PAD - 8);
-
-    make_button(overlay, 44, HEADER_H - 8, LV_ALIGN_TOP_RIGHT, -PAD, 4, COL_NEUTRAL,
-                LV_SYMBOL_CLOSE, close_cb);
 
     // Materialfilter: 86 integrierte Profile sind sonst nur mit langem
     // Wischen erreichbar.

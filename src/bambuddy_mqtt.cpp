@@ -4,6 +4,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <esp_heap_caps.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
@@ -212,7 +213,23 @@ static void mqtt_service()
 
     if (!mqtt.loop()) {
         const int state = mqtt.state();
-        Serial.printf("[MQTT] Verbindung verloren: %s (rc=%d)\n", state_text(state), state);
+
+        // Speicherstand mitschreiben.
+        //
+        // Abbrueche treten auffaellig oft dann auf, wenn die Oberflaeche
+        // gerade viele Objekte anlegt — Bildschirmschoner, langes Scrollen
+        // in den Einstellungen. LVGL nimmt dafuer den internen RAM, und aus
+        // demselben Speicher holt sich lwIP seine Puffer. Ist das die
+        // Ursache, steht es hier: wenig frei oder ein zu kleiner groesster
+        // Block. Bleiben die Zahlen dagegen hoch, liegt es am Netz und nicht
+        // am Geraet.
+        Serial.printf("[MQTT] Verbindung verloren: %s (rc=%d) — intern frei %u, "
+                      "groesster Block %u\n",
+                      state_text(state), state,
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL |
+                                                        MALLOC_CAP_8BIT),
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL |
+                                                                 MALLOC_CAP_8BIT));
         force_disconnect();
     }
 }

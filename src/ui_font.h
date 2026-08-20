@@ -23,12 +23,12 @@
 //
 //   npx lv_font_conv --no-compress --no-prefilter --bpp 4 --size 16
 //     --font Montserrat-Medium.ttf -r '0x20-0x7F,0xA0-0xFF,0x2022'
-//     --font FontAwesome5-Solid+Brands+Regular.woff -r <Symbolliste>,61463,62153
+//     --font FontAwesome5-Solid+Brands+Regular.woff -r <Symbolliste>,61463,62153,62194
 //     --format lvgl -o src/fonts/bb_font_16.c --force-fast-kern-format
 //     --lv-include lvgl.h
 //
-// Die 61463 und 62153 am Ende sind Uhr und Thermometer, siehe BB_SYMBOL_*
-// weiter unten.
+// Die Zahlen am Ende sind Uhr, Thermometer und Stoppuhr — siehe die
+// BB_SYMBOL_*-Zeilen weiter unten.
 //
 // Beide Schriftdateien und die Symbolliste liegen im LVGL-Paket unter
 // scripts/built_in_font/ bzw. im Kopf von src/font/lv_font_montserrat_16.c.
@@ -51,3 +51,4 @@ LV_FONT_DECLARE(bb_font_24);
 // kostet ein Zeichen mehr nichts ausser der Zeile in der Symbolliste.
 #define BB_SYMBOL_CLOCK "\xEF\x80\x97"  // U+F017
 #define BB_SYMBOL_TEMP  "\xEF\x8B\x89"  // U+F2C9, Thermometer
+#define BB_SYMBOL_SPEED "\xEF\x8B\xB2"  // U+F2F2, Stoppuhr

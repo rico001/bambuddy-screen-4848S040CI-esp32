@@ -3,6 +3,7 @@
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
+#include <string.h>
 
 #include "ams_screen.h"
 #include "bambuddy_api.h"
@@ -11,6 +12,7 @@
 #include "general_screen.h"
 #include "queue_screen.h"
 #include "settings_screen.h"
+#include "screenshot.h"
 #include "status_bar.h"
 #include "status_screen.h"
 #include "bambuddy_hms.h"
@@ -111,6 +113,98 @@ static const char *reset_reason_text(bool *unexpected)
     default:               text = "unbekannt"; break;
     }
     return text;
+}
+
+// ============================================================
+// Bildschirmfoto ueber die serielle Schnittstelle
+// ============================================================
+//
+// Ausgeloest wird es mit dem Wort "screenshot" auf der Konsole; screenshot.sh
+// schickt genau das. Die Uebertragung laeuft als Base64 zwischen zwei Marken,
+// damit ein mitlaufendes Log das Skript nicht durcheinanderbringt: Es nimmt
+// nur, was zwischen den Marken steht.
+//
+// Beides — Anforderung und Ausgabe — gehoert in diesen Thread: Die Aufnahme
+// haengt am Zeichnen, und Serial gehoert ohnehin niemandem sonst.
+static constexpr char SHOT_BEGIN[] = "BB_SHOT_BEGIN";
+static constexpr char SHOT_END[] = "BB_SHOT_END";
+
+static bool shot_pending = false;
+
+static void shot_send()
+{
+    static const char B64[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    const uint8_t *data = screenshot_data();
+    const size_t size = screenshot_size();
+
+    Serial.printf("\n%s %u %u %u\n", SHOT_BEGIN, (unsigned)screenshot_width(),
+                  (unsigned)screenshot_height(), (unsigned)size);
+
+    // Zeilenweise senden und dazwischen den Watchdog beruhigen: Bei 450 KB
+    // dauert die Ausgabe je nach Baudrate Sekunden, und in dieser Zeit
+    // kommt lv_timer_handler() nicht dran.
+    char line[81];
+    int n = 0;
+
+    for (size_t i = 0; i < size; i += 3) {
+        const uint32_t b0 = data[i];
+        const uint32_t b1 = (i + 1 < size) ? data[i + 1] : 0;
+        const uint32_t b2 = (i + 2 < size) ? data[i + 2] : 0;
+        const uint32_t triple = (b0 << 16) | (b1 << 8) | b2;
+
+        line[n++] = B64[(triple >> 18) & 0x3F];
+        line[n++] = B64[(triple >> 12) & 0x3F];
+        line[n++] = (i + 1 < size) ? B64[(triple >> 6) & 0x3F] : '=';
+        line[n++] = (i + 2 < size) ? B64[triple & 0x3F] : '=';
+
+        if (n >= 80) {
+            line[n] = '\0';
+            Serial.println(line);
+            n = 0;
+            esp_task_wdt_reset();
+        }
+    }
+
+    if (n > 0) {
+        line[n] = '\0';
+        Serial.println(line);
+    }
+
+    Serial.printf("%s\n", SHOT_END);
+    esp_task_wdt_reset();
+}
+
+static void shot_poll()
+{
+    // Fertige Aufnahme abholen, bevor neue Befehle gelesen werden.
+    if (shot_pending && screenshot_ready()) {
+        shot_pending = false;
+        shot_send();
+        screenshot_release();
+    }
+
+    while (Serial.available() > 0) {
+        static char cmd[24];
+        static uint8_t len = 0;
+
+        const char c = (char)Serial.read();
+        if (c == '\r') continue;
+
+        if (c != '\n') {
+            if (len < sizeof(cmd) - 1) cmd[len++] = c;
+            continue;
+        }
+
+        cmd[len] = '\0';
+        len = 0;
+
+        if (strcmp(cmd, "screenshot") == 0) {
+            shot_pending = screenshot_request();
+            if (!shot_pending) Serial.println("[Screenshot] abgelehnt");
+        }
+    }
 }
 
 // --- Setup & Loop ---
@@ -226,6 +320,7 @@ void loop()
     ui_watch("lvgl");
     lv_timer_handler();
     ui_watch("loop");
+    shot_poll();
     esp_task_wdt_reset();
 
     // Gibt dem WiFi/TCP-Task auf Core 0 CPU-Zeit — ohne yield kann der
