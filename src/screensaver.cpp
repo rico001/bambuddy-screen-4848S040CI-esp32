@@ -30,50 +30,18 @@ static lv_obj_t *progress_bar = nullptr;
 static int shown_progress = -1;
 static int shown_minute = -1;
 
-// Der Schoner hat eine eigene Farbwelt, und das ist Absicht.
+// Die Farben des Schoners kommen aus ui_theme.h und leiten sich damit aus
+// der eingestellten Akzentfarbe ab — der Regen faellt in demselben Ton, den
+// die Oberflaeche als Hervorhebung benutzt.
 //
-// Er liegt immer auf Schwarz — auch im hellen Schema: Ein weiss leuchtender
-// 480x480-Bildschirm um drei Uhr nachts waere das Gegenteil eines Schoners.
-// Die Token aus ui_theme.h taugen hier deshalb nicht: COL_TEXT ist im hellen
-// Schema dunkel und auf schwarzem Grund unlesbar. Stattdessen die Werte des
-// dunklen Schemas, fest verdrahtet.
-static constexpr uint32_t SAVER_TEXT = 0xE8ECF2; // wie COL_TEXT (dunkel)
-
-// Der Regen faellt in Blau, nicht in Gruen.
-//
-// Das Gruen war ein Zitat, das mit dem Rest des Geraets nichts zu tun hatte.
-// Die Toene hier leiten sich vom Akzentblau der Oberflaeche ab (COL_ACCENT):
-// der Kopf fast weiss, der Schweif deutlich dunkler — dieser Abstand ist es,
-// der die Fallrichtung ueberhaupt erkennbar macht. Feste Werte, weil der
-// Schoner immer auf Schwarz liegt und dem hellen Schema nicht folgen darf.
-static constexpr uint32_t RAIN_HEAD = 0xD6E6FF;   // Kopf der Spalte
-static constexpr uint32_t RAIN_ACCENT = 0x3B82F6; // wie COL_ACCENT (dunkel)
-
-// Der Schweif verlaeuft vom Kopf weg ins Blau: hell direkt hinter dem Kopf,
-// dann in vier Stufen dunkler. Ein einfarbiger Schweif sieht aus wie ein
-// fallendes Wort; erst das Abklingen macht daraus eine Spur.
-//
-// Die Stufen sind fest und nicht gerechnet: Eine Interpolation im RGB-Raum
-// kippt zwischen Weiss und Blau ins Graue, von Hand gesetzte Werte bleiben
-// bunt.
-static constexpr int RAIN_SEGMENTS = 4;
-static constexpr uint32_t RAIN_TRAIL[RAIN_SEGMENTS] = {
-    0x9CC0F0, // direkt hinter dem Kopf
-    0x5E8ED8,
-    0x3564BC,
-    0x2450A8, // Ende der Spur
-};
-
-// Tafel im Regen: sehr dunkles Blau statt Schwarz, damit sie als Teil des
-// Bildes wirkt und nicht als Loch darin.
-static constexpr uint32_t PANEL_BG = 0x081220;
-static constexpr uint32_t PANEL_TEXT = 0xD6E6FF;
-static constexpr uint32_t PANEL_MUTED = 0x7FA6D9;
-static constexpr uint32_t PANEL_PILL = 0x0C1A2B;
-static constexpr uint32_t PANEL_TRACK = 0x16324F;
+// Was hier nicht dem Farbschema folgt: Der Schoner liegt immer auf Schwarz,
+// auch wenn hell eingestellt ist. Deshalb gibt es dafuer eigene, dauerhaft
+// dunkle Toene (COL_SAVER_*) statt der Flaechenfarben der Screens.
 
 // Farbe fuer "nichts zu melden": heller als das uebliche Grau, weil der
-// Schoner bei gedaempfter Beleuchtung aus einigen Metern gelesen wird.
+// Schoner bei gedaempfter Beleuchtung aus einigen Metern gelesen wird. Sie
+// haengt bewusst nicht an der Akzentfarbe — sie sagt "kein Zustand", und das
+// ist keine Aussage, die eingefaerbt gehoert.
 static constexpr uint32_t PRINTER_NEUTRAL_RGB = 0x9AA5AD;
 
 // Wochentage ausgeschrieben statt der englischen Kuerzel von strftime: Das
@@ -248,10 +216,10 @@ static lv_obj_t *clock_panel_build()
     lv_obj_set_style_radius(panel, 18, 0);
     lv_obj_set_style_pad_all(panel, 0, 0);
 
-    lv_obj_set_style_bg_color(panel, lv_color_hex(PANEL_BG), 0);
+    lv_obj_set_style_bg_color(panel, lv_color_hex(COL_SAVER_PANEL), 0);
     lv_obj_set_style_bg_opa(panel, CLOCK_PANEL_OPA, 0);
     lv_obj_set_style_border_width(panel, 2, 0);
-    lv_obj_set_style_border_color(panel, lv_color_hex(RAIN_ACCENT), 0);
+    lv_obj_set_style_border_color(panel, lv_color_hex(COL_ACCENT), 0);
     lv_obj_set_style_border_opa(panel, LV_OPA_COVER, 0);
     return panel;
 }
@@ -265,7 +233,7 @@ static lv_obj_t *clock_panel_build()
 static void clock_build(bool on_panel)
 {
     lv_obj_t *parent = overlay;
-    uint32_t time_rgb = SAVER_TEXT;
+    uint32_t time_rgb = COL_RAIN_HEAD;
     // Heller als sonst: Aus zwei Metern Abstand und bei 30 %
     // Hintergrundbeleuchtung waere das uebliche Grau fuer Nebeninformation
     // kaum noch zu lesen.
@@ -277,10 +245,10 @@ static void clock_build(bool on_panel)
     if (on_panel) {
         clock_panel = clock_panel_build();
         parent = clock_panel;
-        time_rgb = PANEL_TEXT; // dieselbe Farbe wie die Koepfe der Spalten
-        date_rgb = PANEL_MUTED;
-        pill_rgb = PANEL_PILL;
-        track_rgb = PANEL_TRACK;
+        time_rgb = COL_RAIN_HEAD; // dieselbe Farbe wie die Koepfe der Spalten
+        date_rgb = COL_SAVER_MUTED;
+        pill_rgb = COL_SAVER_PILL;
+        track_rgb = COL_SAVER_TRACK;
         width = SCREEN_W - 76;
     }
 
@@ -404,13 +372,13 @@ static const char MATRIX_CHARS[] = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ<>*+=";
 static constexpr int MATRIX_CHAR_COUNT = sizeof(MATRIX_CHARS) - 1;
 
 struct matrix_col_t {
-    lv_obj_t *seg[RAIN_SEGMENTS]; // Schweif, von hell nach dunkel
+    lv_obj_t *seg[COL_RAIN_STEPS]; // Schweif, von hell nach dunkel
     lv_obj_t *head;
     int16_t row;     // Zeile des hellen Kopfes, darf negativ sein
     uint8_t length;  // Laenge des Schweifs in Zeichen
     uint8_t period;  // alle wie viel Ticks ein Schritt?
     uint8_t counter;
-    char text[RAIN_SEGMENTS][2 * MATRIX_TRAIL_MAX]; // je Zeichen ein Umbruch
+    char text[COL_RAIN_STEPS][2 * MATRIX_TRAIL_MAX]; // je Zeichen ein Umbruch
     char head_text[2];
 };
 
@@ -453,8 +421,8 @@ static void matrix_write_trail(matrix_col_t &c)
     int remaining = c.length;
     int above = 1; // Abstand des naechsten Zeichens ueber dem Kopf
 
-    for (int s = 0; s < RAIN_SEGMENTS; s++) {
-        const int count = remaining / (RAIN_SEGMENTS - s);
+    for (int s = 0; s < COL_RAIN_STEPS; s++) {
+        const int count = remaining / (COL_RAIN_STEPS - s);
 
         size_t n = 0;
         for (int i = 0; i < count && n + 2 < sizeof(c.text[s]); i++) {
@@ -496,10 +464,10 @@ static void matrix_build()
         c = {};
         matrix_reset(c);
 
-        for (int s = 0; s < RAIN_SEGMENTS; s++) {
+        for (int s = 0; s < COL_RAIN_STEPS; s++) {
             c.seg[s] = lv_label_create(overlay);
             lv_obj_set_style_text_font(c.seg[s], &bb_font_24, 0);
-            lv_obj_set_style_text_color(c.seg[s], lv_color_hex(RAIN_TRAIL[s]), 0);
+            lv_obj_set_style_text_color(c.seg[s], lv_color_hex(COL_RAIN[s]), 0);
 
             // Zeilenabstand aus der Schrift ableiten, nicht aus ihrer
             // Punktgroesse: Die Abschnitte sind mehrzeilige Labels, der Kopf
@@ -517,7 +485,7 @@ static void matrix_build()
         // Bewegungsrichtung ueberhaupt erkennbar macht.
         c.head = lv_label_create(overlay);
         lv_obj_set_style_text_font(c.head, &bb_font_24, 0);
-        lv_obj_set_style_text_color(c.head, lv_color_hex(RAIN_HEAD), 0);
+        lv_obj_set_style_text_color(c.head, lv_color_hex(COL_RAIN_HEAD), 0);
         lv_obj_set_x(c.head, i * MATRIX_COL_W + 4);
 
         matrix_step(c);
