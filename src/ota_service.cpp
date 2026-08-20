@@ -8,6 +8,9 @@
 
 #include "bambuddy_version.h"
 #include "build_stamp.h"
+#include "nav_bar.h"
+#include "screenshot.h"
+#include "ui_nav.h"
 
 // ============================================================
 // Zustand
@@ -104,13 +107,76 @@ static const char PAGE_HEAD[] PROGMEM =
     "#fill{height:100%;width:0;background:#2f6fed}"
     "#msg{color:#8b91a1;margin-top:10px;min-height:1.5em}"
     ".warn{color:#e0a336}"
-    "</style></head><body><main>"
+    "#shot{width:100%;max-width:480px;display:block;margin:0 auto;"
+    "border-radius:12px;border:1px solid #262a33;background:#0f1115;"
+    "aspect-ratio:1}"
+    "#shot.busy{opacity:.45}"
+    "button.ghost{background:#262a33}"
+    ".actions{display:flex;justify-content:flex-end;margin-bottom:10px}"
+    "nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}"
+    "nav button{flex:1;min-width:88px;padding:11px 8px;background:#262a33}"
+    "nav button.on{background:#2f6fed}"
+    "a{color:#2f6fed}"
+    "</style></head><body><main>";
+
+// Die Kopfzeilen unterscheiden die beiden Seiten; das Geruest darueber ist
+// dasselbe, damit sie nicht auseinanderlaufen.
+static const char PAGE_ROOT_HEAD[] PROGMEM =
     "<h1>Bambuddy Display</h1>"
     "<p class=\"sub\">Firmware-Update über das Netzwerk</p>"
     "<h2>Laufende Firmware</h2><table>";
 
+// Bedienseite: das Display sehen und die Kacheln umschalten.
+//
+// Die Reihenfolge der Knoepfe ist die der Kacheln im Geraet (0 = AMS ...
+// 4 = System) — der Index wandert unveraendert an ui_nav_tile_from_task().
+static const char PAGE_SCREEN[] PROGMEM =
+    "<h1>Bildschirm</h1>"
+    "<p class=\"sub\">Ansicht des Displays — <a href=\"/\">zum Update</a></p>"
+    "<div class=\"actions\">"
+    "<button id=\"snap\" class=\"ghost\" type=\"button\">Neu rendern</button>"
+    "</div>"
+    "<img id=\"shot\" alt=\"Bildschirm des Displays\">"
+    "<nav>"
+    "<button data-i=\"0\">AMS</button>"
+    "<button data-i=\"1\">Status</button>"
+    "<button data-i=\"2\">Aufträge</button>"
+    "<button data-i=\"3\">Archiv</button>"
+    "<button data-i=\"4\">System</button>"
+    "</nav>"
+    "<script>"
+    "var shot=document.getElementById('shot'),snap=document.getElementById('snap'),"
+    "busy=false;"
+    // Zeitstempel an die Adresse haengen, sonst zeigt der Browser das Bild
+    // von vorhin aus seinem Zwischenspeicher — und alles sieht aus, als
+    // taete es nichts. Getauscht wird erst nach onload, damit das alte Bild
+    // stehen bleibt statt kurz zu verschwinden.
+    "function load(){if(busy)return;busy=true;shot.classList.add('busy');"
+    "snap.disabled=true;var i=new Image();"
+    "i.onload=function(){shot.src=i.src;done('Neu rendern');};"
+    "i.onerror=function(){done('Ging nicht — nochmal');};"
+    "i.src='/screenshot.bmp?t='+Date.now();}"
+    "function done(t){busy=false;shot.classList.remove('busy');"
+    "snap.disabled=false;snap.textContent=t;}"
+    "var nav=document.querySelectorAll('nav button');"
+    "nav.forEach(function(b){b.onclick=function(){"
+    "nav.forEach(function(o){o.classList.remove('on');});b.classList.add('on');"
+    "fetch('/tile?i='+b.dataset.i,{method:'POST'})"
+    "  .then(function(r){if(!r.ok)throw 0;load();})"
+    "  .catch(function(){done('Umschalten ging nicht');});};});"
+    "snap.onclick=load;"
+    "function mark(i){nav.forEach(function(o){"
+    "o.classList.toggle('on',o.dataset.i===String(i));});}"
+    "fetch('/tile').then(function(r){return r.text();}).then(mark)"
+    "  .catch(function(){});"
+    "load();"
+    "</script></main></body></html>";
+
 static const char PAGE_FORM[] PROGMEM =
     "</table>"
+    "<h2>Bildschirm</h2>"
+    "<p><a href=\"/screen\">Ansehen und bedienen</a> — zeigt das Display und "
+    "schaltet die Kacheln um.</p>"
     "<h2>Update</h2>"
     "<form id=\"f\">"
     "<input type=\"file\" id=\"file\" name=\"firmware\" accept=\".bin\" required>"
@@ -157,6 +223,7 @@ static void handle_root()
     server->setContentLength(CONTENT_LENGTH_UNKNOWN);
     server->send(200, "text/html", "");
     server->sendContent_P(PAGE_HEAD);
+    server->sendContent_P(PAGE_ROOT_HEAD);
 
     char value[96];
 
@@ -295,6 +362,137 @@ static void handle_upload_done()
 }
 
 // ============================================================
+// Bildschirmfoto
+// ============================================================
+//
+// Aufgenommen wird im LVGL-Thread, ausgeliefert von hier. Der Handler bittet
+// nur darum und wartet; nimmt er selbst auf, zeichneten zwei Threads
+// gleichzeitig.
+//
+// Als BMP, nicht als PNG: Der Puffer liegt bereits als RGB565 vor, und ein
+// BMP braucht davor nichts weiter als 66 Byte Kopf — kein Deflate, keine
+// zweiten 450 KB Heap. Im WLAN faellt die Groesse nicht ins Gewicht.
+
+// Wie lange auf den LVGL-Thread gewartet wird. Ein Durchlauf dauert
+// Millisekunden; laenger als eine Sekunde heisst, dass er haengt.
+static constexpr uint32_t SHOT_WAIT_MS = 3000;
+
+static void put_le16(uint8_t *p, uint16_t v)
+{
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)(v >> 8);
+}
+
+static void put_le32(uint8_t *p, uint32_t v)
+{
+    p[0] = (uint8_t)(v & 0xFF);
+    p[1] = (uint8_t)((v >> 8) & 0xFF);
+    p[2] = (uint8_t)((v >> 16) & 0xFF);
+    p[3] = (uint8_t)((v >> 24) & 0xFF);
+}
+
+static void handle_screen()
+{
+    server->setContentLength(CONTENT_LENGTH_UNKNOWN);
+    server->send(200, "text/html", "");
+    server->sendContent_P(PAGE_HEAD);
+    server->sendContent_P(PAGE_SCREEN);
+    server->sendContent("");
+}
+
+static void handle_tile_get()
+{
+    char body[8];
+    snprintf(body, sizeof(body), "%d", ui_nav_active_tile());
+    server->send(200, "text/plain", body);
+}
+
+static void handle_tile()
+{
+    if (!server->hasArg("i")) {
+        server->send(400, "text/plain", "Kachel fehlt\n");
+        return;
+    }
+
+    const int index = server->arg("i").toInt();
+    if (index < 0 || index >= NAV_TILE_COUNT) {
+        server->send(400, "text/plain", "Kachel gibt es nicht\n");
+        return;
+    }
+
+    ui_nav_tile_from_task(index);
+
+    // Dem Geraet Zeit lassen, den Wechsel wirklich zu zeichnen, bevor die
+    // Seite das naechste Bild holt. Ohne das zeigte die Aufnahme mitunter
+    // noch die alte Kachel — oder die neue, bevor ihre Daten da sind.
+    delay(400);
+
+    server->send(204, "text/plain", "");
+}
+
+static void handle_screenshot()
+{
+    // Eine liegengebliebene Aufnahme verwerfen. Sonst liefert der naechste
+    // Abruf nach einem Fehlversuch das Bild von vorhin, ohne dass jemand
+    // merkt, dass es alt ist.
+    if (screenshot_ready()) screenshot_release();
+
+    screenshot_request_from_task();
+
+    const uint32_t deadline = millis() + SHOT_WAIT_MS;
+    while (!screenshot_ready() && (int32_t)(millis() - deadline) < 0)
+        delay(10);
+
+    if (!screenshot_ready()) {
+        server->send(503, "text/plain",
+                     "Aufnahme kam nicht zustande. Reicht das PSRAM nicht "
+                     "mehr, hilft nur ein Neustart des Geraets.\n");
+        return;
+    }
+
+    const uint8_t *data = screenshot_data();
+    const uint32_t w = screenshot_width();
+    const uint32_t h = screenshot_height();
+    const uint32_t stride = w * 2; // 960 Byte, durch 4 teilbar: kein Zusatz
+    const uint32_t offset = 66;    // 14 Dateikopf + 40 Infokopf + 12 Masken
+    const uint32_t total = offset + stride * h;
+
+    uint8_t head[66] = {0};
+    head[0] = 'B';
+    head[1] = 'M';
+    put_le32(head + 2, total);
+    put_le32(head + 10, offset);
+
+    put_le32(head + 14, 40);   // Groesse des Infokopfs
+    put_le32(head + 18, w);
+    put_le32(head + 22, h);    // positiv: Zeilen stehen von unten nach oben
+    put_le16(head + 26, 1);    // Ebenen
+    put_le16(head + 28, 16);   // Bit je Pixel
+    put_le32(head + 30, 3);    // BI_BITFIELDS — ohne das liest jeder Leser
+                               // 16 Bit als 5-5-5 und das Bild wird gruenstichig
+    put_le32(head + 34, stride * h);
+    put_le32(head + 54, 0xF800); // Rot
+    put_le32(head + 58, 0x07E0); // Gruen
+    put_le32(head + 62, 0x001F); // Blau
+
+    server->setContentLength(total);
+    server->send(200, "image/bmp", "");
+    server->sendContent((const char *)head, sizeof(head));
+
+    // Zeilenweise und von unten nach oben, wie BMP es erwartet. Zeilenweise
+    // auch deshalb, weil sendContent() sonst 450 KB am Stueck durch den
+    // TCP-Puffer schieben muesste.
+    for (int32_t y = (int32_t)h - 1; y >= 0; y--)
+        server->sendContent((const char *)(data + (size_t)y * stride), stride);
+
+    server->sendContent("", 0);
+    screenshot_release();
+
+    Serial.printf("[OTA] Bildschirmfoto ausgeliefert (%u KB)\n",
+                  (unsigned)(total / 1024));
+}
+
+// ============================================================
 // Server an/aus
 // ============================================================
 
@@ -311,6 +509,10 @@ static void server_start()
 
     server->on("/", HTTP_GET, handle_root);
     server->on("/update", HTTP_POST, handle_upload_done, handle_upload);
+    server->on("/screen", HTTP_GET, handle_screen);
+    server->on("/screenshot.bmp", HTTP_GET, handle_screenshot);
+    server->on("/tile", HTTP_POST, handle_tile);
+    server->on("/tile", HTTP_GET, handle_tile_get);
     server->onNotFound(handle_root);
     server->begin();
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include <stddef.h>
 #include <stdint.h>
 
 // Abbild des Bildschirms, so wie er gerade wirklich aussieht.
@@ -20,9 +19,16 @@
 // Der Puffer (450 KB, RGB565) liegt im PSRAM und existiert nur zwischen
 // Anforderung und Freigabe.
 
-// Aufnahme anfordern. Muss aus dem LVGL-Thread kommen (loop()).
-// Liefert false, wenn schon eine laeuft oder der Speicher nicht reicht.
-bool screenshot_request();
+// Aufnahme anstossen. Darf aus jedem Task kommen — aufgenommen wird nicht
+// hier, sondern im naechsten screenshot_poll(): Der Webserver laeuft auf
+// Core 0 und darf lv_refr_now() nicht selbst rufen, LVGL ist nicht
+// thread-fest.
+void screenshot_request_from_task();
+
+// Im LVGL-Thread rufen (loop()): nimmt auf, falls jemand darum gebeten hat.
+// Liefert true, wenn dieser Aufruf eine Aufnahme gemacht hat — sonst false,
+// auch wenn schon eine unabgeholt bereitliegt oder das PSRAM nicht reicht.
+bool screenshot_poll();
 
 // Ist das Bild vollstaendig? Erst danach duerfen die Daten gelesen werden.
 bool screenshot_ready();
@@ -30,11 +36,11 @@ bool screenshot_ready();
 // Rohdaten: 480x480 Pixel, RGB565 in der Bytefolge des Panels, zeilenweise
 // von oben nach unten.
 const uint8_t *screenshot_data();
-size_t screenshot_size();
 uint16_t screenshot_width();
 uint16_t screenshot_height();
 
-// Aufnahme abschliessen. Der Puffer bleibt dabei belegt: Ihn freizugeben und
+// Aufnahme abschliessen und den Platz fuer die naechste freigeben. Darf aus
+// jedem Task kommen. Der Puffer bleibt dabei belegt: Ihn freizugeben und
 // spaeter neu anzufordern schlaegt fehl, sobald das PSRAM zerstueckelt ist —
 // und das ist es nach ein paar Modell- und Kamerabildern. Nach der ersten
 // Aufnahme sind die 450 KB also dauerhaft weg.

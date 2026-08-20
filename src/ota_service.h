@@ -16,6 +16,11 @@
 // Passwort. Das ist Absicht: ein Passwort auf diesem Display einzugeben ist
 // laestiger als der Schalter, und der Schalter ist die ehrlichere Aussage.
 //
+// Daneben liegt unter /screen eine Bedienseite: Sie zeigt das Display, so wie
+// es im Moment des Abrufs aussieht (das Bild allein unter /screenshot.bmp),
+// und schaltet die Kacheln um. Damit laesst sich ein Geraet an der Wand
+// ansehen und bedienen, ohne davorzustehen.
+//
 // Der Dienst laeuft in einem eigenen Task auf Core 0, nicht im LVGL-Loop:
 // Ein Upload haelt den Server ueber Sekunden beschaeftigt, und der
 // UI-Watchdog in loop() schlaegt nach zehn Sekunden zu.

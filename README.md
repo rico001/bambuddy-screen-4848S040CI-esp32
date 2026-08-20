@@ -101,9 +101,13 @@ All shots are taken straight from the device
       <br><sub>Screensaver</sub>
     </td>
   </tr>
-  <tr>
-    <td align="center" colspan="2">
-      <img src="docs/screen-dialog.png" alt="Confirmation dialog asking whether to switch the printer off after the print" width="50%">
+  </tr>
+    <td align="center" width="50%">
+      <img src="docs/screen-system-settings.png" alt="Camera snapshot from the printer">
+      <br><sub>Settings GUI</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screen-dialog.png" alt="Confirmation dialog asking whether to switch the printer off after the print">
       <br><sub>Auto-off</sub>
     </td>
   </tr>
@@ -331,6 +335,12 @@ the new image.
 
 The switch is off by default and its state survives a restart. While it is on,
 anyone on the same network can flash the device: there is no password.
+
+### Screen view (`/screen`)
+
+Linked from the update page: shows the display live and lets you switch
+between the tiles from the browser. Mostly a development aid — the screenshots
+in this README are taken with it, via `./screenshots.py` (see `--help`).
 
 ## Tested With
 
