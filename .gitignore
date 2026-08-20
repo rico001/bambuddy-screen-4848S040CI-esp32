@@ -12,3 +12,4 @@ screenshots/
 # Erzeugt PlatformIO bei jedem Build neu, enthaelt absolute Pfade dieses
 # Rechners — fuer andere wertlos und bei jedem Build "geaendert".
 .vscode/c_cpp_properties.json
+.claude
