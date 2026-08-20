@@ -17,7 +17,7 @@ ESP32-S3 touchscreen companion for **Bambuddy** and **Bambu Lab** printers, buil
 **Powered by Bambuddy**
 
 <p>
-  <img src="docs/1000020755.jpg" alt="Bambuddy display next to Bambu Studio showing printer status" width="100%">
+  <img src="docs/bambuddy-und-bambuddy-screen.jpg" alt="Bambuddy display next to Bambu Studio showing printer status" width="100%">
 </p>
 
 ## What is this?
@@ -56,33 +56,58 @@ If you mean that square ESP32 touchscreen board with USB-C: yes, this is the one
 
 ## Gallery
 
-### Bambuddy and Bambuddy Screen in Action
+### The interface
+
+All shots are taken straight from the device
 
 <table>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/1000020759.jpg" alt="Queue view on the Bambuddy display" width="100%">
+      <img src="docs/screen-status.png" alt="Status view with printer state, temperatures and controls" width="100%">
+      <br><sub>Status</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/1000020763.jpg" alt="Smart plug controls on the Bambuddy display" width="100%">
+      <img src="docs/screen-ams.png" alt="AMS view with four spools, humidity and temperature" width="100%">
+      <br><sub>AMS</sub>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%">
-      <img src="docs/1000020761.jpg" alt="Bambuddy display during printing" width="100%">
+      <img src="docs/screen-archiv.png" alt="Archive list with reprint and delete actions" width="100%">
+      <br><sub>Archive</sub>
     </td>
     <td align="center" width="50%">
-      <img src="docs/1000020762.jpg" alt="Close-up of the Bambuddy display interface" width="100%">
+      <img src="docs/screen-system.png" alt="System tile with Wi-Fi and settings" width="100%">
+      <br><sub>System</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screen-einstellungen.png" alt="Settings list with dark mode, screen timeout and screensaver" width="100%">
+      <br><sub>Settings</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screen-smart-plugs.png" alt="Smart plug controls" width="100%">
+      <br><sub>Smart plugs</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/screen-jog.png" alt="Jog controls for X, Y, Z and extruder" width="100%">
+      <br><sub>Jog</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/screen-bildschirmschoner.png" alt="Screensaver with falling characters and a clock panel" width="100%">
+      <br><sub>Screensaver</sub>
     </td>
   </tr>
   <tr>
     <td align="center" colspan="2">
-      <img src="docs/1000020757.jpg" alt="Main printer status view on the Bambuddy display" width="60%">
+      <img src="docs/screen-dialog.png" alt="Confirmation dialog asking whether to switch the printer off after the print" width="50%">
+      <br><sub>Auto-off</sub>
     </td>
   </tr>
 </table>
-
-More photos are available in [`docs/`](docs/).
 
 ## Get Started
 
@@ -115,8 +140,8 @@ Then fill in `include/secrets.h` with:
 - `BAMBUDDY_DEFAULT_URL`
 - `BAMBUDDY_DEFAULT_API_KEY`
 - `BAMBUDDY_DEFAULT_PRINTER_ID`
-- optional camera token
-- optional MQTT credentials
+- optional camera token (recommended)
+- optional MQTT credentials (recommended)
 
 The API key can be created directly in Bambuddy under **Settings -> API Keys**.
 
@@ -195,6 +220,20 @@ This project primarily talks to Bambuddy through its REST API, with optional MQT
 - ESP32-S3
 - LVGL 9.2.2
 - `esp32-smartdisplay`
+
+### Design system
+
+`src/ui_theme.h` holds the tokens — surface levels, text colours, meaning
+colours (ok / warn / error / accent), plus a spacing and radius scale — in two
+palettes; `ui_theme_set_dark()` picks one at startup. `src/ui_kit.h` builds
+everything from them: cards, tiles, buttons, icon buttons, status pills,
+overline captions, values, rules and progress bars. Screens should reach for
+those instead of styling objects by hand, so a change of look happens in one
+place.
+
+Switching the palette needs a restart — the screens carry their colours in the
+objects, and re-theming at runtime would only repaint what LVGL itself owns.
+The settings switch says so and restarts on confirmation.
 
 ### Fonts
 

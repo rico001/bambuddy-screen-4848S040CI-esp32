@@ -7,6 +7,7 @@
 
 #include "secrets.h"
 #include "ui_layout.h"
+#include "ui_kit.h"
 #include "ui_theme.h"
 #include "ui_font.h"
 
@@ -278,13 +279,24 @@ static void enter_state(wifi_state_t new_state)
 
     if (!ui_ready) return;
 
-    // Scan-Button ist immer da (kein Layout-Springen) — nur deaktiviert, wenn sinnlos.
-    const bool scan_allowed = (state == WS_IDLE || state == WS_LIST ||
-                               state == WS_CONNECTED || state == WS_RETRY_WAIT);
-    if (scan_allowed) {
+    // Der Scan-Knopf erscheint nur, solange keine Verbindung steht.
+    //
+    // Frueher stand er immer da und war nur gesperrt — die Ueberlegung war,
+    // dass ein verschwindender Knopf das Layout springen laesst. Hier springt
+    // aber nichts: Er sitzt allein in der Kopfzeile, und rechts daneben ist
+    // ohnehin nichts. Verbunden ist ein Scan zudem nicht bloss gesperrt,
+    // sondern gegenstandslos — die Ansicht darunter zeigt dann das Netz, in
+    // dem man steckt.
+    //
+    // Waehrend Passworteingabe und Verbindungsversuch bleibt er ebenfalls
+    // weg: Dort laeuft eine Handlung, die ein Scan abbrechen wuerde.
+    const bool scan_visible = (state == WS_IDLE || state == WS_LIST ||
+                               state == WS_RETRY_WAIT);
+    if (scan_visible) {
+        lv_obj_remove_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_state(scan_btn, LV_STATE_DISABLED);
     } else {
-        lv_obj_add_state(scan_btn, LV_STATE_DISABLED);
+        lv_obj_add_flag(scan_btn, LV_OBJ_FLAG_HIDDEN);
     }
 
     switch (state) {
@@ -539,9 +551,8 @@ static void build_network_row(int idx)
     lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_bg_color(row, lv_color_hex(COL_ACCENT), LV_STATE_PRESSED);
     lv_obj_set_style_bg_opa(row, LV_OPA_20, LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(row, 0, 0);
-    lv_obj_set_style_radius(row, 8, 0);
-    lv_obj_set_style_pad_hor(row, 10, 0);
+    ui_card_style(row);
+    lv_obj_set_style_pad_hor(row, GAP_M, 0);
     lv_obj_set_style_pad_ver(row, 0, 0);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -767,27 +778,27 @@ static void style_spinner(lv_obj_t *spinner)
 {
     lv_obj_set_style_arc_width(spinner, 6, LV_PART_MAIN);
     lv_obj_set_style_arc_width(spinner, 6, LV_PART_INDICATOR);
-    lv_obj_set_style_arc_color(spinner, lv_color_hex(0xDDDDDD), LV_PART_MAIN);
+    lv_obj_set_style_arc_color(spinner, lv_color_hex(COL_LINE), LV_PART_MAIN);
     lv_obj_set_style_arc_color(spinner, lv_color_hex(COL_ACCENT), LV_PART_INDICATOR);
 }
 
+// Panels und Knoepfe kommen aus dem Baukasten (ui_kit.h) — dieselbe Karte,
+// dieselben Radien und dieselben Zustandsfarben wie auf den uebrigen Screens.
 static void style_panel(lv_obj_t *obj)
 {
-    lv_obj_set_style_radius(obj, 10, 0);
-    lv_obj_set_style_border_width(obj, 0, 0);
-    lv_obj_set_style_pad_all(obj, 10, 0);
-    lv_obj_remove_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
+    ui_card_style(obj);
+    lv_obj_set_style_pad_all(obj, GAP_L, 0);
 }
 
 static lv_obj_t *make_button(lv_obj_t *parent, const char *text, uint32_t color,
                              lv_event_cb_t cb, lv_obj_t **out_label = nullptr)
 {
-    lv_obj_t *btn = lv_button_create(parent);
-    lv_obj_set_style_bg_color(btn, lv_color_hex(color), 0);
+    lv_obj_t *btn = ui_button(parent, color, LV_SIZE_CONTENT, 46);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, nullptr);
 
     lv_obj_t *lbl = lv_label_create(btn);
     lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(COL_TEXT), 0);
     lv_obj_center(lbl);
     if (out_label) *out_label = lbl;
     return btn;
@@ -795,9 +806,17 @@ static lv_obj_t *make_button(lv_obj_t *parent, const char *text, uint32_t color,
 
 static void build_header(lv_obj_t *parent)
 {
+    // Gegenstueck zum runden Zurueck-Knopf links in derselben Kopfzeile:
+    // gleiche Hoehe, gleiche Grundlinie, und als Kapsel gerundet statt als
+    // Rechteck. Zwei Bedienelemente nebeneinander mit unterschiedlicher Hoehe
+    // und Rundung sind das, was eine Kopfzeile unruhig macht.
+    static constexpr int SCAN_H = 40;
+
     scan_btn = make_button(parent, LV_SYMBOL_REFRESH "  Scannen", COL_ACCENT,
                            scan_btn_cb, &scan_btn_lbl);
-    lv_obj_set_size(scan_btn, 140, 40);
+    lv_obj_set_size(scan_btn, 132, SCAN_H);
+    lv_obj_set_style_radius(scan_btn, SCAN_H / 2, 0);
+    lv_obj_set_style_text_font(scan_btn_lbl, &bb_font_12, 0);
     lv_obj_align(scan_btn, LV_ALIGN_TOP_RIGHT, -PAD, 6);
 }
 
@@ -808,21 +827,28 @@ static void build_status_card(lv_obj_t *parent)
     lv_obj_align(card, LV_ALIGN_TOP_MID, 0, CARD_Y);
     style_panel(card);
 
-    card_icon = lv_label_create(card);
+    // Symbol in einer eigenen kleinen Flaeche statt frei stehend: Dieselbe
+    // Anordnung wie bei den Startknoepfen der Systemkachel.
+    lv_obj_t *icon_box = ui_tile(card, 40, 40);
+    lv_obj_align(icon_box, LV_ALIGN_LEFT_MID, 0, 0);
+
+    card_icon = lv_label_create(icon_box);
     lv_label_set_text(card_icon, LV_SYMBOL_WIFI);
-    lv_obj_align(card_icon, LV_ALIGN_LEFT_MID, 4, 0);
+    lv_obj_center(card_icon);
 
     card_title = lv_label_create(card);
     lv_label_set_text(card_title, "");
-    lv_obj_align(card_title, LV_ALIGN_LEFT_MID, 38, -10);
+    lv_obj_set_style_text_font(card_title, &bb_font_16, 0);
+    lv_obj_set_style_text_color(card_title, lv_color_hex(COL_TEXT), 0);
+    lv_obj_align(card_title, LV_ALIGN_LEFT_MID, 52, -10);
 
     card_sub = lv_label_create(card);
     lv_label_set_text(card_sub, "");
-    lv_obj_set_width(card_sub, CONTENT_W - 70);
+    lv_obj_set_width(card_sub, CONTENT_W - 92);
     lv_label_set_long_mode(card_sub, LV_LABEL_LONG_DOT);
     lv_obj_set_style_text_font(card_sub, &bb_font_12, 0);
     lv_obj_set_style_text_color(card_sub, lv_color_hex(COL_MUTED), 0);
-    lv_obj_align(card_sub, LV_ALIGN_LEFT_MID, 38, 11);
+    lv_obj_align(card_sub, LV_ALIGN_LEFT_MID, 52, 11);
 }
 
 static void build_list_view(lv_obj_t *parent)
@@ -837,8 +863,13 @@ static void build_list_view(lv_obj_t *parent)
 
     net_list = lv_list_create(view_list);
     lv_obj_set_size(net_list, LV_PCT(100), LV_PCT(100));
-    lv_obj_set_style_radius(net_list, 10, 0);
-    lv_obj_set_style_pad_all(net_list, 4, 0);
+    // Die Liste traegt keine eigene Flaeche mehr: Ihre Zeilen sind seit dem
+    // Redesign selbst Karten, und eine Karte in einer Karte ist ein Rahmen
+    // zuviel.
+    lv_obj_set_style_bg_opa(net_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(net_list, 0, 0);
+    lv_obj_set_style_pad_all(net_list, 0, 0);
+    lv_obj_set_style_pad_row(net_list, GAP_S, 0);
 
     list_spinner = lv_spinner_create(view_list);
     lv_obj_set_size(list_spinner, 72, 72);
@@ -868,6 +899,7 @@ static void build_password_view(lv_obj_t *parent)
 
     pw_ssid_lbl = lv_label_create(view_password);
     lv_label_set_text(pw_ssid_lbl, "");
+    lv_obj_set_style_text_color(pw_ssid_lbl, lv_color_hex(COL_TEXT), 0);
     lv_obj_set_width(pw_ssid_lbl, CONTENT_W);
     lv_label_set_long_mode(pw_ssid_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(pw_ssid_lbl, LV_ALIGN_TOP_LEFT, 4, 0);
@@ -878,11 +910,15 @@ static void build_password_view(lv_obj_t *parent)
     lv_textarea_set_placeholder_text(pw_ta, "Passwort");
     lv_obj_set_size(pw_ta, CONTENT_W - 66, 46);
     lv_obj_align(pw_ta, LV_ALIGN_TOP_LEFT, 0, 26);
+    lv_obj_set_style_radius(pw_ta, RADIUS_CTRL, 0);
+    lv_obj_set_style_bg_color(pw_ta, lv_color_hex(COL_RAISED), 0);
+    lv_obj_set_style_border_width(pw_ta, 1, 0);
+    lv_obj_set_style_border_color(pw_ta, lv_color_hex(COL_LINE), 0);
+    lv_obj_set_style_border_color(pw_ta, lv_color_hex(COL_ACCENT), LV_STATE_FOCUSED);
+    lv_obj_set_style_text_color(pw_ta, lv_color_hex(COL_TEXT), 0);
 
-    lv_obj_t *eye_btn = lv_button_create(view_password);
-    lv_obj_set_size(eye_btn, 58, 46);
+    lv_obj_t *eye_btn = ui_button(view_password, COL_NEUTRAL, 58, 46);
     lv_obj_align(eye_btn, LV_ALIGN_TOP_RIGHT, 0, 26);
-    lv_obj_set_style_bg_color(eye_btn, lv_color_hex(COL_NEUTRAL), 0);
     lv_obj_add_event_cb(eye_btn, pw_eye_cb, LV_EVENT_CLICKED, nullptr);
     pw_eye_lbl = lv_label_create(eye_btn);
     lv_label_set_text(pw_eye_lbl, LV_SYMBOL_EYE_CLOSE);
@@ -933,6 +969,7 @@ static void build_connected_view(lv_obj_t *parent)
     conn_ssid_lbl = lv_label_create(info);
     lv_label_set_text(conn_ssid_lbl, "");
     lv_obj_set_style_text_font(conn_ssid_lbl, &bb_font_16, 0);
+    lv_obj_set_style_text_color(conn_ssid_lbl, lv_color_hex(COL_TEXT), 0);
     lv_obj_set_width(conn_ssid_lbl, CONTENT_W - 30);
     lv_label_set_long_mode(conn_ssid_lbl, LV_LABEL_LONG_DOT);
     lv_obj_align(conn_ssid_lbl, LV_ALIGN_TOP_LEFT, 4, 4);
@@ -974,6 +1011,7 @@ static void build_focus_view(lv_obj_t *parent)
 
     focus_title = lv_label_create(view_focus);
     lv_label_set_text(focus_title, "");
+    lv_obj_set_style_text_color(focus_title, lv_color_hex(COL_TEXT), 0);
     lv_obj_set_width(focus_title, CONTENT_W - 20);
     lv_label_set_long_mode(focus_title, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(focus_title, LV_TEXT_ALIGN_CENTER, 0);

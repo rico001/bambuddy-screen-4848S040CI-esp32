@@ -7,3 +7,8 @@ bambuddy-docs/selfhosted/*
 src/build_stamp.cpp
 firmware-build/
 update.sh
+screenshots/
+
+# Erzeugt PlatformIO bei jedem Build neu, enthaelt absolute Pfade dieses
+# Rechners — fuer andere wertlos und bei jedem Build "geaendert".
+.vscode/c_cpp_properties.json
