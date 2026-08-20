@@ -1,6 +1,4 @@
 .pio
-akm-feature-mqtt-tls/*
-boards
 include/secrets.h
 bambuddy-docs/selfhosted/*
 # Vom Build erzeugt (pre_build.py)
