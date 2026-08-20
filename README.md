@@ -116,18 +116,34 @@ All shots are taken straight from the device
 You need:
 
 - a **Sunton ESP32-4848S040CI** display board
-- a **USB-C data cable**
-- a computer with PlatformIO
+- a **USB-C data cable** — a charge-only cable has no data wires and the
+  board will never show up as a serial port
 - a running **Bambuddy** instance
 
-### 2. Clone the repo
+### 2. Install PlatformIO Core
+
+The firmware is built by **PlatformIO Core**, the command line tool. It is
+what provides the `pio` command used below, and it is independent of the
+VSCode extension — you do not need an editor or any extension to build and
+flash this project.
 
 ```bash
-git clone <your-repo-url>
-cd bambuddy-display
+pip install -U platformio     # or: brew install platformio
+pio --version
 ```
 
-### 3. Prepare your config
+If you prefer to work in VSCode, install the **PlatformIO IDE** extension
+instead; it brings its own copy of Core and offers the same steps as buttons.
+Note that its `pio` may not be on your `PATH`.
+
+### 3. Clone the repo
+
+```bash
+git clone https://github.com/rico001/bambuddy-screen-4848S040CI-esp32.git
+cd bambuddy-screen-4848S040CI-esp32
+```
+
+### 4. Prepare your config
 
 `include/secrets.example.h` is the template for your initial configuration.
 
@@ -151,13 +167,17 @@ The API key can be created directly in Bambuddy under **Settings -> API Keys**.
 
 Important: these values are only the **initial defaults for the first boot**. After that, the display stores its own settings in NVS.
 
-### 4. Build the firmware
+### 5. Build the firmware
 
 ```bash
 pio run
 ```
 
-### 5. Flash the board
+The **first** build downloads the ESP32 toolchain, the Arduino framework and
+all libraries — several hundred megabytes. Expect a few quiet minutes and an
+internet connection; later builds take seconds.
+
+### 6. Flash the board
 
 Connect the board via **USB-C**, then run:
 
@@ -170,6 +190,17 @@ Open the serial monitor:
 ```bash
 pio device monitor
 ```
+
+**If no serial port is found.** The upload stops right away when the board is
+not visible as a port. Common causes, in the order worth checking:
+
+- a charge-only USB-C cable — swap it for one with data wires
+- on Linux, your user is not in the `dialout` group:
+  `sudo usermod -aG dialout $USER`, then log out and back in
+- on Windows or macOS, the USB serial driver for the board is missing; run
+  `pio device list` to see whether a port appears at all
+- the board is not in bootloader mode: hold **BOOT**, plug in the cable (or
+  tap **RESET**), then release **BOOT** and start the upload again
 
 ## First Boot
 
