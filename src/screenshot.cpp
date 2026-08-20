@@ -66,7 +66,7 @@ static void capture_flush(lv_display_t *disp, const lv_area_t *area, uint8_t *px
     }
 }
 
-bool screenshot_request()
+static bool take_now()
 {
     if (capturing || complete) return false;
 
@@ -122,19 +122,37 @@ bool screenshot_request()
     return true;
 }
 
+// Aus fremdem Task gesetzt, im LVGL-Thread gelesen und zurueckgenommen.
+// Ein einzelnes Bit braucht dafuer kein Schloss: Nur der eine Weg setzt es,
+// nur der andere loescht es.
+static volatile bool wanted = false;
+
+void screenshot_request_from_task()
+{
+    wanted = true;
+}
+
+bool screenshot_poll()
+{
+    if (!wanted) return false;
+    wanted = false;
+    return take_now();
+}
+
 bool screenshot_ready()
 {
     return complete && buffer != nullptr;
 }
 
 const uint8_t *screenshot_data() { return buffer; }
-size_t screenshot_size() { return SHOT_SIZE; }
 uint16_t screenshot_width() { return SHOT_W; }
 uint16_t screenshot_height() { return SHOT_H; }
 
 void screenshot_release()
 {
-    stop_capture();
+    // Ruehrt LVGL bewusst nicht an: Der Aufruf kommt aus dem Webserver-Task.
+    // Noetig waere es auch nicht — take_now() haengt den Mitschnitt noch im
+    // selben Aufruf wieder ab, danach ist nichts mehr eingehaengt.
     complete = false;
 
     // Der Puffer bleibt absichtlich liegen.

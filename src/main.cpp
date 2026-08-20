@@ -3,7 +3,6 @@
 #include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <esp_task_wdt.h>
-#include <string.h>
 
 #include "ams_screen.h"
 #include "bambuddy_api.h"
@@ -34,39 +33,77 @@ static lv_obj_t *queue_tile;
 static lv_obj_t *archive_tile;
 static lv_obj_t *general_tile;
 
+static volatile int active_tile = -1;
+
+// Die Kacheln in der Reihenfolge der Navigationsleiste: 0 = AMS ... 4 =
+// System. Diese Reihenfolge ist die eine Wahrheit — Leiste, Sprungziele und
+// die Webseite des Geraets zaehlen alle danach.
+static lv_obj_t *tile_at(int index)
+{
+    lv_obj_t *const tiles[NAV_TILE_COUNT] = {ams_tile, status_tile, queue_tile,
+                                             archive_tile, general_tile};
+    if (index < 0 || index >= NAV_TILE_COUNT) return nullptr;
+    return tiles[index];
+}
+
+static int tile_index(const lv_obj_t *tile)
+{
+    if (!tile) return -1;
+    for (int i = 0; i < NAV_TILE_COUNT; i++)
+        if (tile_at(i) == tile) return i;
+    return -1;
+}
+
 // Kachelwechsel: nur der sichtbare Screen soll Daten holen
 static void tile_changed_cb(lv_event_t *)
 {
-    const bool ams_visible = lv_tileview_get_tile_active(tileview) == ams_tile;
-    const bool queue_visible = lv_tileview_get_tile_active(tileview) == queue_tile;
-    const bool archive_visible = lv_tileview_get_tile_active(tileview) == archive_tile;
-    const bool general_visible = lv_tileview_get_tile_active(tileview) == general_tile;
-    ams_screen_set_visible(ams_visible);
-    queue_screen_set_visible(queue_visible);
-    archive_screen_set_visible(archive_visible);
-    general_screen_set_visible(general_visible);
+    lv_obj_t *const active = lv_tileview_get_tile_active(tileview);
+
+    ams_screen_set_visible(active == ams_tile);
+    queue_screen_set_visible(active == queue_tile);
+    archive_screen_set_visible(active == archive_tile);
+    general_screen_set_visible(active == general_tile);
 
     // Die Leiste muss auch dem Wischen folgen, nicht nur dem Antippen —
-    // sonst zeigt sie nach einer Geste noch auf die vorherige Kachel.
-    lv_obj_t *const active = lv_tileview_get_tile_active(tileview);
-    if (active == ams_tile) nav_bar_set_active(0);
-    else if (active == status_tile) nav_bar_set_active(1);
-    else if (active == queue_tile) nav_bar_set_active(2);
-    else if (active == archive_tile) nav_bar_set_active(3);
-    else if (active == general_tile) nav_bar_set_active(4);
+    // sonst zeigt sie nach einer Geste noch auf die vorherige Kachel. Der
+    // Index wird zugleich vermerkt, damit die Webseite des Geraets zeigen
+    // kann, wo es steht, ohne LVGL aus einem fremden Task anzufassen.
+    const int index = tile_index(active);
+    if (index >= 0) nav_bar_set_active(index);
+    active_tile = index;
+}
+
+int ui_nav_active_tile()
+{
+    return active_tile;
 }
 
 void ui_nav_tile(int index)
 {
-    lv_obj_t *const tiles[] = {ams_tile, status_tile, queue_tile, archive_tile,
-                               general_tile};
-    if (!tileview || index < 0 || index >= (int)(sizeof(tiles) / sizeof(tiles[0]))) {
-        return;
-    }
-    if (!tiles[index]) return;
+    lv_obj_t *const tile = tile_at(index);
+    if (!tileview || !tile) return;
 
-    lv_tileview_set_tile(tileview, tiles[index], LV_ANIM_OFF);
+    lv_tileview_set_tile(tileview, tile, LV_ANIM_OFF);
     tile_changed_cb(nullptr);
+}
+
+// Aus fremdem Task gesetzt, im LVGL-Thread abgeholt. Ein einzelner int
+// braucht dafuer kein Schloss: Nur der eine Weg schreibt, nur der andere
+// setzt zurueck. Kommen zwei Wuensche kurz nacheinander, gewinnt der
+// spaetere — genau das erwartet auch, wer zweimal klickt.
+static volatile int wanted_tile = -1;
+
+void ui_nav_tile_from_task(int index)
+{
+    wanted_tile = index;
+}
+
+void ui_nav_poll()
+{
+    const int index = wanted_tile;
+    if (index < 0) return;
+    wanted_tile = -1;
+    ui_nav_tile(index);
 }
 
 // Smart Plugs und Jog-Steuerung liegen als Vollbild ueber allem. Ein
@@ -113,98 +150,6 @@ static const char *reset_reason_text(bool *unexpected)
     default:               text = "unbekannt"; break;
     }
     return text;
-}
-
-// ============================================================
-// Bildschirmfoto ueber die serielle Schnittstelle
-// ============================================================
-//
-// Ausgeloest wird es mit dem Wort "screenshot" auf der Konsole; screenshot.sh
-// schickt genau das. Die Uebertragung laeuft als Base64 zwischen zwei Marken,
-// damit ein mitlaufendes Log das Skript nicht durcheinanderbringt: Es nimmt
-// nur, was zwischen den Marken steht.
-//
-// Beides — Anforderung und Ausgabe — gehoert in diesen Thread: Die Aufnahme
-// haengt am Zeichnen, und Serial gehoert ohnehin niemandem sonst.
-static constexpr char SHOT_BEGIN[] = "BB_SHOT_BEGIN";
-static constexpr char SHOT_END[] = "BB_SHOT_END";
-
-static bool shot_pending = false;
-
-static void shot_send()
-{
-    static const char B64[] =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-
-    const uint8_t *data = screenshot_data();
-    const size_t size = screenshot_size();
-
-    Serial.printf("\n%s %u %u %u\n", SHOT_BEGIN, (unsigned)screenshot_width(),
-                  (unsigned)screenshot_height(), (unsigned)size);
-
-    // Zeilenweise senden und dazwischen den Watchdog beruhigen: Bei 450 KB
-    // dauert die Ausgabe je nach Baudrate Sekunden, und in dieser Zeit
-    // kommt lv_timer_handler() nicht dran.
-    char line[81];
-    int n = 0;
-
-    for (size_t i = 0; i < size; i += 3) {
-        const uint32_t b0 = data[i];
-        const uint32_t b1 = (i + 1 < size) ? data[i + 1] : 0;
-        const uint32_t b2 = (i + 2 < size) ? data[i + 2] : 0;
-        const uint32_t triple = (b0 << 16) | (b1 << 8) | b2;
-
-        line[n++] = B64[(triple >> 18) & 0x3F];
-        line[n++] = B64[(triple >> 12) & 0x3F];
-        line[n++] = (i + 1 < size) ? B64[(triple >> 6) & 0x3F] : '=';
-        line[n++] = (i + 2 < size) ? B64[triple & 0x3F] : '=';
-
-        if (n >= 80) {
-            line[n] = '\0';
-            Serial.println(line);
-            n = 0;
-            esp_task_wdt_reset();
-        }
-    }
-
-    if (n > 0) {
-        line[n] = '\0';
-        Serial.println(line);
-    }
-
-    Serial.printf("%s\n", SHOT_END);
-    esp_task_wdt_reset();
-}
-
-static void shot_poll()
-{
-    // Fertige Aufnahme abholen, bevor neue Befehle gelesen werden.
-    if (shot_pending && screenshot_ready()) {
-        shot_pending = false;
-        shot_send();
-        screenshot_release();
-    }
-
-    while (Serial.available() > 0) {
-        static char cmd[24];
-        static uint8_t len = 0;
-
-        const char c = (char)Serial.read();
-        if (c == '\r') continue;
-
-        if (c != '\n') {
-            if (len < sizeof(cmd) - 1) cmd[len++] = c;
-            continue;
-        }
-
-        cmd[len] = '\0';
-        len = 0;
-
-        if (strcmp(cmd, "screenshot") == 0) {
-            shot_pending = screenshot_request();
-            if (!shot_pending) Serial.println("[Screenshot] abgelehnt");
-        }
-    }
 }
 
 // --- Setup & Loop ---
@@ -320,7 +265,12 @@ void loop()
     ui_watch("lvgl");
     lv_timer_handler();
     ui_watch("loop");
-    shot_poll();
+
+    // Beides muss hier geschehen, weil nur dieser Thread an LVGL darf. Erst
+    // umschalten, dann aufnehmen: Wer von der Webseite aus eine Kachel
+    // waehlt und gleich danach ein Bild abruft, soll die neue sehen.
+    ui_nav_poll();
+    screenshot_poll();
     esp_task_wdt_reset();
 
     // Gibt dem WiFi/TCP-Task auf Core 0 CPU-Zeit — ohne yield kann der
