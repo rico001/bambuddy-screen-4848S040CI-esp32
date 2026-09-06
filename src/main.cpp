@@ -85,6 +85,14 @@ void ui_nav_tile(int index)
 
     lv_tileview_set_tile(tileview, tile, LV_ANIM_OFF);
     tile_changed_cb(nullptr);
+
+    // Wer eine Kachel waehlt, will sie auch sehen: Bildschirmschoner weg,
+    // Helligkeit zurueck, Abschaltzeit von vorn. Das gehoert hierher und
+    // nicht zum Aufrufer — sonst muesste jeder Weg (Leiste, Webseite, was
+    // spaeter dazukommt) selbst daran denken, und der Schoner bliebe beim
+    // naechsten Weg wieder davor stehen. Am Geraet selbst weckt schon die
+    // Beruehrung; ein zweites Mal wecken kostet dort nichts.
+    settings_screen_wake();
 }
 
 // Aus fremdem Task gesetzt, im LVGL-Thread abgeholt. Ein einzelner int
