@@ -344,7 +344,7 @@ in this README are taken with it, via `./screenshots.py` (see `--help`).
 
 ## Tested With
 
-Tested against a private **Bambuddy v1.2.5.3** instance on a **Bambu Lab P1S v01.10.00.00**.
+Tested against a private **Bambuddy v1.2.5.5** instance on a **Bambu Lab P1S v01.10.00.00**.
 
 ## Project Status
 

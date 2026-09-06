@@ -3,10 +3,12 @@
 Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instanz
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
-**Getestet gegen Bambuddy-Version: v1.2.5.3**
-**Letzte Prüfung: 2026-08-15, 23:16 Uhr — Instanz auf v1.2.5.3, alle
-genutzten Endpunkte, Parameter und Antwortfelder unverändert; nur die
-Versionsangaben nachgezogen, kein Code angepasst**
+**Getestet gegen Bambuddy-Version: v1.2.5.5**
+**Letzte Prüfung: 2026-09-06, 23:11 Uhr — Instanz auf v1.2.5.5 (Sprung über
+1.2.5.4); kein genutzter Endpunkt entfernt, alle Query-Parameter, Rumpf- und
+Antwortfelder unverändert, `print/objects` und die AMS-Ableitung im Frontend
+von Hand gegengeprüft — nur die Versionsangaben nachgezogen, kein Code
+angepasst**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -206,7 +208,7 @@ hier nachsehen:
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
 
-## Genutzte Endpunkte (Stand v1.2.5.3)
+## Genutzte Endpunkte (Stand v1.2.5.5)
 
 | Endpunkt | Datei |
 |---|---|
