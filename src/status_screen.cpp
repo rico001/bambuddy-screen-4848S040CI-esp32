@@ -13,6 +13,7 @@
 #include "bambuddy_queue.h"
 #include "bambuddy_smart_plugs.h"
 #include "printer_icon.h"
+#include "skip_objects_view.h"
 #include "settings_screen.h"
 #include "ui_kit.h"
 #include "ui_layout.h"
@@ -71,6 +72,7 @@ static lv_obj_t *remaining_lbl;
 static lv_obj_t *queue_lbl;
 
 static lv_obj_t *auto_off_btn;
+static lv_obj_t *skip_objects_btn;
 static lv_obj_t *cam_btn;
 
 static lv_obj_t *nozzle_value_lbl;
@@ -551,6 +553,16 @@ static void update_controls()
         lv_obj_set_style_bg_opa(cam_btn, (lv_opa_t)cam_opa, 0);
     }
 
+    // Ueberspringen gibt es nur waehrend eines Drucks: Ohne laufenden
+    // Auftrag kennt der Drucker keine Objekte, und die Liste bliebe leer.
+    set_enabled(skip_objects_btn, running || paused);
+    static int shown_skip_opa = -1;
+    const int skip_opa = (running || paused) ? LV_OPA_COVER : LV_OPA_50;
+    if (skip_opa != shown_skip_opa) {
+        shown_skip_opa = skip_opa;
+        lv_obj_set_style_opa(skip_objects_btn, (lv_opa_t)skip_opa, 0);
+    }
+
     const bool light_on = have_status && status.chamber_light;
     // Zweizeilig wie alle Knoepfe der Reihe: Symbol oben, Beschriftung
     // darunter. Die beiden Knoepfe mit wechselndem Text schreiben ihn selbst
@@ -629,6 +641,13 @@ static void auto_off_cb(lv_event_t *)
                "50 °C liegt, schaltet das Display die Steckdose des Druckers "
                "aus.",
                "Abbrechen", "Einschalten", COL_PLUG, auto_off_confirmed, nullptr);
+}
+
+// --- Objekte ueberspringen ------------------------------------------------
+
+static void skip_objects_cb(lv_event_t *)
+{
+    skip_objects_view_open();
 }
 
 static void speed_chosen(int index, void *)
@@ -1050,6 +1069,22 @@ static void build_job_card(lv_obj_t *parent)
     lv_obj_set_style_text_font(auto_off_icon, &bb_font_24, 0);
     lv_obj_set_style_text_color(auto_off_icon, lv_color_white(), 0);
     lv_obj_center(auto_off_icon);
+
+    // Objekte ueberspringen, links neben der Uhr. Auch das ist eine Aussage
+    // ueber diesen Auftrag und nicht ueber den Drucker — deshalb hier oben
+    // und nicht in der Steuerungsreihe, die ohnehin voll ist.
+    skip_objects_btn = lv_button_create(card);
+    lv_obj_set_size(skip_objects_btn, 36, 36);
+    lv_obj_align(skip_objects_btn, LV_ALIGN_TOP_RIGHT, -(10 + 36 + GAP_S), 6);
+    lv_obj_set_style_radius(skip_objects_btn, 18, 0);
+    lv_obj_set_style_shadow_width(skip_objects_btn, 0, 0);
+    lv_obj_set_style_bg_color(skip_objects_btn, lv_color_hex(COL_ERR), 0);
+    lv_obj_add_event_cb(skip_objects_btn, skip_objects_cb, LV_EVENT_CLICKED, nullptr);
+
+    lv_obj_t *skip_icon = lv_label_create(skip_objects_btn);
+    lv_label_set_text(skip_icon, LV_SYMBOL_CUT);
+    lv_obj_set_style_text_color(skip_icon, lv_color_white(), 0);
+    lv_obj_center(skip_icon);
 
     update_auto_off_button();
 

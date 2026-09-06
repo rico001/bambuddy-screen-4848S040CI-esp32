@@ -20,6 +20,7 @@
 #include "bambuddy_queue.h"
 #include "bambuddy_filament.h"
 #include "bambuddy_hms.h"
+#include "bambuddy_skip.h"
 #include "bambuddy_smart_plugs.h"
 #include "bambuddy_status_parse.h"
 #include "bambuddy_version.h"
@@ -473,6 +474,10 @@ static void api_task(void *)
             bambuddy_smart_plugs_update();
             bambuddy_filament_update();
 
+            // Objektliste des laufenden Drucks — holt nur, solange die
+            // Ansicht offen ist, schickt angeforderte Befehle aber immer.
+            bambuddy_skip_update();
+
             if (use_mqtt && ams_visible &&
                 (!last_ams_fetch_ms || millis() - last_ams_fetch_ms >= AMS_REFRESH_MS)) {
                 fetch_ams_status();
@@ -496,7 +501,8 @@ static void api_task(void *)
         // 3-Sekunden-Takt am Leerlaufintervall von bis zu 30 Sekunden.
         if ((bambuddy_camera_active() || bambuddy_queue_visible() ||
              bambuddy_archive_visible() || bambuddy_smart_plugs_visible() ||
-             bambuddy_filament_visible() || bambuddy_filament_pending_work()) &&
+             bambuddy_filament_visible() || bambuddy_filament_pending_work() ||
+             bambuddy_skip_visible() || bambuddy_skip_pending_work()) &&
             wait_ms > 500) {
             wait_ms = 500;
         }
