@@ -190,6 +190,18 @@ hier nachsehen:
   /smart-plugs/by-printer/{printer_id}` (Feld `controls_printer_power`) —
   diese Auswahl nicht selbst nachbauen, sie hat in 1.2.5.3 gerade erst einen
   Fehler behoben bekommen.
+- **`GET /printers/{id}/print/objects` hat kein Schema.** In der
+  API-Beschreibung steht als Antwort nur `{}` — der tatsaechliche Aufbau
+  wurde an der laufenden Instanz abgelesen und lautet:
+  `{"objects":[{"id":121,"name":"Körper1.stl","x":…,"y":…,"skipped":false}],
+  "total":2,"skipped_count":0,"is_printing":true,"bbox_all":[…]}`. Weil kein
+  Schema daran haengt, wuerde eine Umbenennung hier bei der naechsten
+  Pruefung durch alle Raster fallen: `bambuddy_skip.cpp` zeigte dann eine
+  leere Liste, ohne dass etwas nach einem Fehler aussieht. Also bei jedem
+  Durchlauf einmal von Hand abrufen. `id` ist die `identify_id` des
+  Druckers und zugleich das, was `POST /print/skip-objects` erwartet —
+  dessen Rumpf ist die blosse Liste dieser Zahlen (`[121,157]`), kein Objekt
+  darum herum.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
@@ -204,6 +216,7 @@ hier nachsehen:
 | `POST /printers/{id}/print-speed?mode=` | `bambuddy_api.cpp` |
 | `POST /printers/{id}/{xy-jog,bed-jog,extruder-jog,home-axes}` | `bambuddy_api.cpp` |
 | `POST /printers/{id}/clear-plate` | `bambuddy_queue.cpp`, `bambuddy_archive.cpp` |
+| `GET /printers/{id}/print/objects` · `POST /printers/{id}/print/skip-objects` | `bambuddy_skip.cpp` |
 | `GET /printers/{id}/cover` · `camera/snapshot` | `bambuddy_cover.cpp`, `bambuddy_camera.cpp` |
 | `GET /queue/` · `POST /queue/` · `POST /queue/{id}/start` · `DELETE /queue/{id}` | `bambuddy_queue.cpp`, `bambuddy_archive.cpp` |
 | `GET /archives/` · `DELETE /archives/{id}` · `GET /archives/{id}/thumbnail` | `bambuddy_archive.cpp`, `bambuddy_cover.cpp` |
