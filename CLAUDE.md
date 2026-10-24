@@ -3,12 +3,13 @@
 Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instanz
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
-**Getestet gegen Bambuddy-Version: v1.2.5.5**
-**Letzte Prüfung: 2026-09-06, 23:11 Uhr — Instanz auf v1.2.5.5 (Sprung über
-1.2.5.4); kein genutzter Endpunkt entfernt, alle Query-Parameter, Rumpf- und
-Antwortfelder unverändert, `print/objects` und die AMS-Ableitung im Frontend
-von Hand gegengeprüft — nur die Versionsangaben nachgezogen, kein Code
-angepasst**
+**Getestet gegen Bambuddy-Version: v1.2.5.7**
+**Letzte Prüfung: 2026-10-24, 17:37 Uhr — Instanz auf v1.2.5.7 (Sprung über
+1.2.5.6); kein genutzter Endpunkt, Parameter oder Antwortfeld entfernt (nur
+neue optionale Felder), `print/objects` und die AMS-Ableitung im Frontend
+von Hand gegengeprüft. Angepasst: HMS-`severity` hat eine neue Skala
+(1 = Fehler, 2 = Warnung, 3 = Hinweis) — Text und Farbe in
+`bambuddy_hms.cpp`/`hms_screen.cpp` nachgezogen**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -204,11 +205,20 @@ hier nachsehen:
   Druckers und zugleich das, was `POST /print/skip-objects` erwartet —
   dessen Rumpf ist die blosse Liste dieser Zahlen (`[121,157]`), kein Objekt
   darum herum.
+- **Die Bedeutung von `hms_errors[].severity` hat sich in 1.2.5.7
+  geändert, ohne dass das Schema es zeigt.** Vorher vier Stufen (1 = schwer
+  … 4 = Hinweis), seitdem die Stufe des Druckers selbst: 1 = Fehler,
+  2 = Warnung, 3 = Hinweis, alles andere „Unbekannte Stufe". Stand nur in
+  den Release Notes. Die verlässliche Zuordnung steht im Frontend
+  (`{BASE_URL}/assets/index-*.js`, Suche nach `hmsErrors.severityError`) —
+  bei jedem Durchlauf mit `bambuddy_hms_severity_text()` abgleichen. Seit
+  1.2.5.7 liefert jeder Eintrag außerdem `description` (Bambus eigener
+  Klartext), die das Display bisher nicht auswertet.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
 
-## Genutzte Endpunkte (Stand v1.2.5.5)
+## Genutzte Endpunkte (Stand v1.2.5.7)
 
 | Endpunkt | Datei |
 |---|---|

@@ -31,10 +31,10 @@ static uint32_t severity_color(int32_t severity)
 {
     switch (severity) {
     case BB_HMS_SEVERITY_OK: return COL_OK;
-    case 1: return COL_ERR;
-    case 2: return COL_ERR;
-    case 3: return COL_WARN;
-    case 4: return COL_MUTED;
+    case 1: return COL_ERR;   // Fehler
+    case 2: return COL_WARN;  // Warnung
+    case 3: return COL_MUTED; // Hinweis
+    case 4: return COL_MUTED; // Hinweis nach alter Skala (vor 1.2.5.7)
     default: return COL_WARN;
     }
 }

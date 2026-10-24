@@ -529,13 +529,15 @@ static const char *hms_text(const char *code)
 
 const char *bambuddy_hms_severity_text(int32_t severity)
 {
-    // Eine durchgaengige Leiter statt gemischter Begriffe. "normal" fuer
-    // Stufe 3 stand frueher direkt neben "ernst" und las sich, als sei
-    // alles in Ordnung.
+    // Seit Bambuddy 1.2.5.7 reicht die API die Stufe des Druckers selbst
+    // durch: 1 = Fehler, 2 = Warnung, 3 = Hinweis — dieselben Begriffe wie
+    // im Web-Frontend. Vorher waren es vier Stufen (1 = schwer ... 4 =
+    // Hinweis); die 4 bleibt nur fuer Eintraege, die noch aus einem
+    // frueheren Lauf im NVS liegen.
     switch (severity) {
-    case 1: return "kritisch";
-    case 2: return "Fehler";
-    case 3: return "Warnung";
+    case 1: return "Fehler";
+    case 2: return "Warnung";
+    case 3: return "Hinweis";
     case 4: return "Hinweis";
     case BB_HMS_SEVERITY_OK: return "fertig";
     default: break;
