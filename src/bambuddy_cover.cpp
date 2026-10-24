@@ -205,7 +205,7 @@ static bool fetch_png(const char *url)
 void bambuddy_cover_update(const char *job_name)
 {
     if (!job_name || job_name[0] == '\0') return;
-    if (bambuddy_cam_token()[0] == '\0') return;
+    if (bambuddy_api_key()[0] == '\0') return;
 
     // Das Bild aendert sich nur mit dem Auftrag — also nicht im Poll-Takt
     // nachladen, sondern genau dann, wenn ein anderer Job laeuft.
@@ -219,8 +219,12 @@ void bambuddy_cover_update(const char *job_name)
     // Immer in den Puffer schreiben, den die UI gerade nicht anzeigt
     decode_target = (ready_frame == frame_a) ? frame_b : frame_a;
 
-    const char *url = bambuddy_url("/printers/%d/cover?token=%s",
-                                   bambuddy_printer_id(), bambuddy_cam_token());
+    // Seit Bambuddy 1.2.5.7 nehmen Cover und Thumbnail den Kamera-Token
+    // nicht mehr an, sondern nur noch einen Media-Token (fuer Browser, die
+    // keinen Header setzen koennen) oder den API-Key im Header — den
+    // schickt BambuddyHttp ohnehin mit. Steht ein Kamera-Token zusaetzlich
+    // in der URL, antwortet der Server trotz gueltigem Key mit 401.
+    const char *url = bambuddy_url("/printers/%d/cover", bambuddy_printer_id());
     if (!fetch_png(url)) {
         last_error_ms = millis();
         return;
@@ -251,14 +255,12 @@ void bambuddy_cover_update_big(const char *job_name)
     if (big_archive_id != 0) {
         snprintf(key, sizeof(key), "archiv:%d", (int)big_archive_id);
         snprintf(url, sizeof(url), "%s",
-                 bambuddy_url("/archives/%d/thumbnail?token=%s",
-                              (int)big_archive_id, bambuddy_cam_token()));
+                 bambuddy_url("/archives/%d/thumbnail", (int)big_archive_id));
     } else {
         if (!job_name || job_name[0] == '\0') return;
         snprintf(key, sizeof(key), "auftrag:%s", job_name);
         snprintf(url, sizeof(url), "%s",
-                 bambuddy_url("/printers/%d/cover?token=%s",
-                              bambuddy_printer_id(), bambuddy_cam_token()));
+                 bambuddy_url("/printers/%d/cover", bambuddy_printer_id()));
     }
 
     if (big_have && strcmp(big_key, key) == 0) return;

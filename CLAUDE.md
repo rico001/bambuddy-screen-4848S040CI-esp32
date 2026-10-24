@@ -4,12 +4,14 @@ Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instan
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
 **Getestet gegen Bambuddy-Version: v1.2.5.7**
-**Letzte Prüfung: 2026-10-24, 17:37 Uhr — Instanz auf v1.2.5.7 (Sprung über
+**Letzte Prüfung: 2026-10-24, 18:08 Uhr — Instanz auf v1.2.5.7 (Sprung über
 1.2.5.6); kein genutzter Endpunkt, Parameter oder Antwortfeld entfernt (nur
 neue optionale Felder), `print/objects` und die AMS-Ableitung im Frontend
-von Hand gegengeprüft. Angepasst: HMS-`severity` hat eine neue Skala
+von Hand gegengeprüft. Angepasst: (1) HMS-`severity` hat eine neue Skala
 (1 = Fehler, 2 = Warnung, 3 = Hinweis) — Text und Farbe in
-`bambuddy_hms.cpp`/`hms_screen.cpp` nachgezogen**
+`bambuddy_hms.cpp`/`hms_screen.cpp` nachgezogen; (2) Cover und Thumbnail
+lehnen den Kamera-Token ab (401) — `bambuddy_cover.cpp` ruft sie jetzt ohne
+`?token=` nur mit dem API-Key-Header ab**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -148,9 +150,17 @@ hier nachsehen:
   `{"printer_id":N,"archive_id":M,"manual_start":true}` anlegen, dann
   `POST /queue/{id}/start`. `manual_start` verhindert, dass der Auftrag
   losläuft, bevor die Rückfrage zur Druckplatte beantwortet ist.
-- **Bilder brauchen den Kamera-Token** in der URL, nicht den API-Key:
-  `/printers/{id}/cover`, `/archives/{id}/thumbnail`,
-  `/printers/{id}/camera/snapshot`.
+- **Bilder: je nach Route ein anderer Weg — seit 1.2.5.7 getrennt.**
+  `/printers/{id}/camera/snapshot` braucht weiterhin den **Kamera-Token**
+  in der URL (`?token=`); der API-Key allein ergibt dort 401.
+  `/printers/{id}/cover` und `/archives/{id}/thumbnail` nehmen den
+  Kamera-Token dagegen **nicht mehr** an, sondern nur den **API-Key im
+  Header** (oder einen Media-Token aus `POST /auth/media-token`, gedacht für
+  Browser). Heimtückisch: Steht ein Kamera-Token zusätzlich in der URL,
+  kommt **trotz gültigem Header 401** — „Vorschau wird geladen …" bleibt
+  dann ewig stehen. In der API-Beschreibung sah das nur wie ein neuer
+  *optionaler* Header-Parameter aus. Deshalb bei jedem Durchlauf alle drei
+  Bildrouten einmal echt abrufen und auf `200 image/…` prüfen.
 - **Wartet der Drucker auf `awaiting_plate_clear`**, wird jeder Start
   abgelehnt. Vorher `POST /printers/{id}/clear-plate` schicken.
 - **Einheiten sind nicht dokumentiert.** `print_time_seconds` in der
@@ -251,9 +261,10 @@ HTTP-Antwort, nur `printer_name` statt `name`. Ausgewertet wird beides von
   Änderung; Änderungen also schreiben und kurz zusammenfassen.
 - **Bei jeder Änderung an der Firmware `version.txt` hochzählen** — im
   selben Zug wie die Codeänderung, ohne Rückfrage. Normalfall: letzte
-  Stelle +1 (`1.0.8` → `1.0.9`). Pro Sitzung reicht ein Schritt, auch bei
-  mehreren Änderungen; steht die Datei schon höher als im letzten Commit,
-  nicht erneut erhöhen. Grund: `release.sh` benennt die `.bin` danach, und
+  Stelle +1 (`1.0.8` → `1.0.9`). Maßgeblich ist, ob die aktuelle Nummer
+  schon gebaut wurde: Liegt `firmware-build/bambuddy-display-v<version>.bin`
+  bereits vor, erhöhen; fehlt sie noch, gehören die Änderungen zur selben,
+  noch unveröffentlichten Nummer und es bleibt dabei. Grund: `release.sh` benennt die `.bin` danach, und
   `ota-updat-example.sh` lädt mit `--force` hoch — ohne neue Nummer
   überschreibt es stillschweigend die vorige Datei, und am Gerät ist nicht
   zu erkennen, welcher Stand läuft. Nur Doku/Skripte geändert (nichts unter
