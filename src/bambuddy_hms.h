@@ -43,7 +43,7 @@
 struct bambuddy_hms_entry_t {
     char code[24];     // full_code, z.B. "0300_4006_0002_0001" — leer bei Zustaenden
     char text[64];     // Klartext, leer wenn der Code unbekannt ist
-    int32_t severity;  // 1 = schwer, 2 = ernst, 3 = normal, 4 = Hinweis
+    int32_t severity;  // 1 = Fehler, 2 = Warnung, 3 = Hinweis (Skala seit 1.2.5.7)
     time_t when;       // 0, wenn die Uhr beim Auftreten noch nicht stand
     uint32_t uptime_s; // Ersatzangabe fuer genau diesen Fall
     bool restored;     // aus dem NVS geladen, also aus einem frueheren Lauf
