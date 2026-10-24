@@ -249,5 +249,15 @@ HTTP-Antwort, nur `printer_name` statt `name`. Ausgewertet wird beides von
 
 - **Nicht bauen oder flashen.** `pio run` macht Rico selbst nach jeder
   Änderung; Änderungen also schreiben und kurz zusammenfassen.
+- **Bei jeder Änderung an der Firmware `version.txt` hochzählen** — im
+  selben Zug wie die Codeänderung, ohne Rückfrage. Normalfall: letzte
+  Stelle +1 (`1.0.8` → `1.0.9`). Pro Sitzung reicht ein Schritt, auch bei
+  mehreren Änderungen; steht die Datei schon höher als im letzten Commit,
+  nicht erneut erhöhen. Grund: `release.sh` benennt die `.bin` danach, und
+  `ota-updat-example.sh` lädt mit `--force` hoch — ohne neue Nummer
+  überschreibt es stillschweigend die vorige Datei, und am Gerät ist nicht
+  zu erkennen, welcher Stand läuft. Nur Doku/Skripte geändert (nichts unter
+  `src/`, `include/`, `platformio.ini`) → nicht erhöhen. In der
+  Zusammenfassung die neue Nummer nennen.
 - Nach Änderungen an `include/lv_conf.h` muss `.pio/build` gelöscht werden,
   sonst greifen sie nicht.
