@@ -3,15 +3,17 @@
 Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instanz
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
-**Getestet gegen Bambuddy-Version: v1.2.5.7**
-**Letzte Prüfung: 2026-10-24, 18:08 Uhr — Instanz auf v1.2.5.7 (Sprung über
-1.2.5.6); kein genutzter Endpunkt, Parameter oder Antwortfeld entfernt (nur
-neue optionale Felder), `print/objects` und die AMS-Ableitung im Frontend
-von Hand gegengeprüft. Angepasst: (1) HMS-`severity` hat eine neue Skala
-(1 = Fehler, 2 = Warnung, 3 = Hinweis) — Text und Farbe in
-`bambuddy_hms.cpp`/`hms_screen.cpp` nachgezogen; (2) Cover und Thumbnail
-lehnen den Kamera-Token ab (401) — `bambuddy_cover.cpp` ruft sie jetzt ohne
-`?token=` nur mit dem API-Key-Header ab**
+**Getestet gegen Bambuddy-Version: v1.3.0**
+**Letzte Prüfung: 2026-11-08, 15:28 Uhr — Instanz auf v1.3.0; die in 1.3.0
+entfernten Endpunkte nutzt das Display nicht, kein genutzter Parameter oder
+Antwortfeld entfernt (nur neue optionale). Smart-Plug-Liste und
+`by-printer` haben kein Schema mehr — Felder live geprüft, alle da.
+Archiv-`status` ist jetzt *deprecated* (wird noch geliefert). Bei
+laufendem Druck live gegengeprüft: alle Status- und AMS-Felder, Cover
+(PNG), Snapshot (JPEG), `print/objects`, dazu HMS-Skala und AMS-Ableitung
+im Frontend, alles unverändert. Offen: `layer_num` blieb während des
+Drucks bei 0 (Feld existiert, Wert kommt so vom Server). Nur
+Versionsangaben nachgezogen, kein Code angepasst**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -164,9 +166,16 @@ hier nachsehen:
 - **Wartet der Drucker auf `awaiting_plate_clear`**, wird jeder Start
   abgelehnt. Vorher `POST /printers/{id}/clear-plate` schicken.
 - **Einheiten sind nicht dokumentiert.** `print_time_seconds` in der
-  Warteschlange ist in Sekunden, `remaining_time` im Druckerstatus wird als
-  Minuten interpretiert — beim nächsten echten Druck gegen die Anzeige des
-  Druckers prüfen (der Rohwert steht im Serial-Log).
+  Warteschlange ist in Sekunden, `remaining_time` im Druckerstatus in
+  **Minuten**. Das wurde am 2026-11-08 an einem echten Druck bestätigt: Der
+  Auftrag hatte 1378 s, also etwa 23 min, und bei 21 % meldete
+  `remaining_time` 18.
+- **`layer_num` kann während des Drucks bei 0 stehen bleiben** (beobachtet
+  2026-11-08, 1.3.0, P1S: bei 21–23 % Fortschritt `layer_num` 0 von 97,
+  `progress` und `remaining_time` liefen normal). Das Feld existiert und
+  heißt so, der Wert kommt also vom Server bzw. Drucker. Keine Anpassung
+  im Display nötig. Zeigt das Display „Schicht 0“, zuerst die
+  Bambuddy-Weboberfläche vergleichen.
 - **Beim AMS-Slot rechnet das Frontend mit, was die API verlangt.**
   `POST /slots/{ams}/{tray}/configure` fordert `nozzle_temp_min/max`,
   `tray_type` und `tray_info_idx` — in der Oberfläche gibt die niemand ein.
@@ -178,8 +187,10 @@ hier nachsehen:
   die Preset-ID, sondern die generische Kurz-ID des Materials
   (`PLA → GFL99`). `bambuddy_filament.cpp` bildet das nach — weicht es ab,
   bekommt derselbe Slot je nach Bedienweg andere Temperaturen.
-  Nachzulesen im ausgelieferten Frontend: `{BASE_URL}/assets/index-*.js`,
-  Suche nach `configureAmsSlot`. Bei Zweifeln über das Verhalten der
+  Nachzulesen im ausgelieferten Frontend — seit 1.3.0 nicht mehr in
+  `index-*.js`, sondern in `{BASE_URL}/assets/ConfigureAmsSlotModal-*.js`
+  (Suche nach `GFL99`; zum Auffinden siehe „Frontend durchsuchen" unten).
+  Bei Zweifeln über das Verhalten der
   Oberfläche ist das die verlässlichste Quelle — verlässlicher als die
   API-Beschreibung, die bei `tray_info_idx` in die Irre führt.
 - **Manche Endpunkte sind für API-Schlüssel gesperrt**, unabhängig von
@@ -203,6 +214,22 @@ hier nachsehen:
   /smart-plugs/by-printer/{printer_id}` (Feld `controls_printer_power`) —
   diese Auswahl nicht selbst nachbauen, sie hat in 1.2.5.3 gerade erst einen
   Fehler behoben bekommen.
+- **Seit 1.3.0 haben `GET /smart-plugs/` und `GET
+  /smart-plugs/by-printer/{id}` kein Schema mehr** (Antwort `{}` in der
+  API-Beschreibung, wie bei `print/objects`). Ein Schemavergleich meldet
+  dort nur „alles weg“ und hilft nicht. Also live abrufen und prüfen, dass
+  `id`, `name`, `enabled`, `last_state` und `controls_printer_power` noch
+  kommen (Stand 1.3.0: ja). `/{id}/status` hat sein Schema behalten.
+- **Archive haben seit 1.3.0 Läufe** (`run_id`, `latest_run_id`, `GET
+  /archives/{id}/runs`). Ein erneuter Druck aus der Warteschlange legt kein
+  neues Archiv mehr an, sondern einen Lauf im bestehenden. Die Felder
+  `status`, `printer_id`, `started_at` usw. in `ArchiveResponse` sind
+  *deprecated* und beschreiben nur noch den letzten Lauf. Das Display liest
+  `status` weiterhin (`bambuddy_archive.cpp`), denn es wird noch geliefert.
+  Fällt es in einer späteren Version weg, steht im Archiv stillschweigend
+  kein Status mehr: dann auf `GET /archives/{id}/runs` umstellen. Der
+  Query-Filter `?printer_id=` bei `GET /archives/` ist **nicht**
+  deprecated.
 - **`GET /printers/{id}/print/objects` hat kein Schema.** In der
   API-Beschreibung steht als Antwort nur `{}` — der tatsaechliche Aufbau
   wurde an der laufenden Instanz abgelesen und lautet:
@@ -220,15 +247,28 @@ hier nachsehen:
   … 4 = Hinweis), seitdem die Stufe des Druckers selbst: 1 = Fehler,
   2 = Warnung, 3 = Hinweis, alles andere „Unbekannte Stufe". Stand nur in
   den Release Notes. Die verlässliche Zuordnung steht im Frontend
-  (`{BASE_URL}/assets/index-*.js`, Suche nach `hmsErrors.severityError`) —
-  bei jedem Durchlauf mit `bambuddy_hms_severity_text()` abgleichen. Seit
-  1.2.5.7 liefert jeder Eintrag außerdem `description` (Bambus eigener
-  Klartext), die das Display bisher nicht auswertet.
+  (seit 1.3.0 in `{BASE_URL}/assets/CameraWall-*.js`, Suche nach
+  `hmsErrors.severityError`) — bei jedem Durchlauf mit
+  `bambuddy_hms_severity_text()` abgleichen. Seit 1.2.5.7 liefert jeder
+  Eintrag außerdem `description` (Bambus eigener Klartext), die das Display
+  bisher nicht auswertet.
+- **Frontend durchsuchen: Seit 1.3.0 ist das JavaScript aufgeteilt.**
+  `index-*.js` hat nur noch rund 360 KB, der Rest liegt in rund 230
+  Nachlade-Dateien. Alle laden und dann suchen:
+  `curl -s {BASE_URL}/ | grep -oE '/assets/index-[^"]+\.js'` liefert die
+  Hauptdatei. Darin listet `grep -oE 'assets/[A-Za-z0-9_.-]+\.js'` die
+  übrigen Dateien. Jede einzeln laden und mit `grep -l` nach dem Suchbegriff
+  fragen. Die Dateinamen tragen einen Hash und ändern sich mit jeder
+  Version.
+- **Die Release Notes stehen im Feld `release_notes` von `GET
+  /updates/check`.** Sie sind die einzige Quelle für Bedeutungsänderungen
+  wie die HMS-Skala, und jede Version hat dort einen Abschnitt „Before you
+  update“ mit den API-Änderungen. Den bei jedem Durchlauf lesen.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
 
-## Genutzte Endpunkte (Stand v1.2.5.7)
+## Genutzte Endpunkte (Stand v1.3.0)
 
 | Endpunkt | Datei |
 |---|---|
