@@ -3,17 +3,19 @@
 Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instanz
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
-**Getestet gegen Bambuddy-Version: v1.3.0**
-**Letzte Prüfung: 2026-11-08, 15:28 Uhr — Instanz auf v1.3.0; die in 1.3.0
-entfernten Endpunkte nutzt das Display nicht, kein genutzter Parameter oder
-Antwortfeld entfernt (nur neue optionale). Smart-Plug-Liste und
-`by-printer` haben kein Schema mehr — Felder live geprüft, alle da.
-Archiv-`status` ist jetzt *deprecated* (wird noch geliefert). Bei
-laufendem Druck live gegengeprüft: alle Status- und AMS-Felder, Cover
-(PNG), Snapshot (JPEG), `print/objects`, dazu HMS-Skala und AMS-Ableitung
-im Frontend, alles unverändert. Offen: `layer_num` blieb während des
-Drucks bei 0 (Feld existiert, Wert kommt so vom Server). Nur
-Versionsangaben nachgezogen, kein Code angepasst**
+**Getestet gegen Bambuddy-Version: v1.3.1**
+**Letzte Prüfung: 2026-11-15, 14:04 Uhr — Instanz auf v1.3.1; laut Release
+Notes „no API changes“, der Schemavergleich bestätigt das: kein genutzter
+Endpunkt, Parameter oder Antwortfeld geändert (neu nur WLED-Routen und
+optionale Felder, u. a. `ams_type`/`dryer_*` in `AMSUnit`). Live geprüft:
+Status-, Queue-, Archiv- und Smart-Plug-Felder, `print/objects`,
+Archiv-Thumbnail (PNG); HMS-Skala und AMS-Ableitung im Frontend
+unverändert (HMS-Skala liegt jetzt in `camWallControls-*.js`). Mit
+eingeschaltetem Drucker (IDLE) nachgeprüft: alle Status-, AMS- und
+Tray-Felder da, Snapshot `200 image/jpeg`, Cover mit Kamera-Token weiter
+401. Mit Druckauftrag: Cover `200 image/png`, `print/objects` mit Objekten
+(Aufbau unverändert), `subtask_name`/`total_layers`/`remaining_time`
+gefüllt. Nur Versionsangaben nachgezogen, kein Code angepasst**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -247,8 +249,8 @@ hier nachsehen:
   … 4 = Hinweis), seitdem die Stufe des Druckers selbst: 1 = Fehler,
   2 = Warnung, 3 = Hinweis, alles andere „Unbekannte Stufe". Stand nur in
   den Release Notes. Die verlässliche Zuordnung steht im Frontend
-  (seit 1.3.0 in `{BASE_URL}/assets/CameraWall-*.js`, Suche nach
-  `hmsErrors.severityError`) — bei jedem Durchlauf mit
+  (seit 1.3.1 in `{BASE_URL}/assets/camWallControls-*.js`, in 1.3.0 noch
+  `CameraWall-*.js`; Suche nach `hmsErrors.severityError`) — bei jedem Durchlauf mit
   `bambuddy_hms_severity_text()` abgleichen. Seit 1.2.5.7 liefert jeder
   Eintrag außerdem `description` (Bambus eigener Klartext), die das Display
   bisher nicht auswertet.
@@ -268,7 +270,7 @@ hier nachsehen:
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
 
-## Genutzte Endpunkte (Stand v1.3.0)
+## Genutzte Endpunkte (Stand v1.3.1)
 
 | Endpunkt | Datei |
 |---|---|
