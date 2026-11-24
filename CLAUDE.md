@@ -3,19 +3,20 @@
 Display für eine selbst gehostete [Bambuddy](https://wiki.bambuddy.cool)-Instanz
 auf einem Sunton ESP32-4848S040CI (480x480, LVGL 9.2).
 
-**Getestet gegen Bambuddy-Version: v1.3.1**
-**Letzte Prüfung: 2026-11-15, 14:04 Uhr — Instanz auf v1.3.1; laut Release
-Notes „no API changes“, der Schemavergleich bestätigt das: kein genutzter
-Endpunkt, Parameter oder Antwortfeld geändert (neu nur WLED-Routen und
-optionale Felder, u. a. `ams_type`/`dryer_*` in `AMSUnit`). Live geprüft:
-Status-, Queue-, Archiv- und Smart-Plug-Felder, `print/objects`,
-Archiv-Thumbnail (PNG); HMS-Skala und AMS-Ableitung im Frontend
-unverändert (HMS-Skala liegt jetzt in `camWallControls-*.js`). Mit
-eingeschaltetem Drucker (IDLE) nachgeprüft: alle Status-, AMS- und
-Tray-Felder da, Snapshot `200 image/jpeg`, Cover mit Kamera-Token weiter
-401. Mit Druckauftrag: Cover `200 image/png`, `print/objects` mit Objekten
-(Aufbau unverändert), `subtask_name`/`total_layers`/`remaining_time`
-gefüllt. Nur Versionsangaben nachgezogen, kein Code angepasst**
+**Getestet gegen Bambuddy-Version: v1.3.2**
+**Letzte Prüfung: 2026-11-24, 16:22 Uhr — Instanz auf v1.3.2; laut Release Notes
+„no breaking API changes“, der Schemavergleich bestätigt das: kein
+genutzter Endpunkt, Parameter oder Antwortfeld geändert (neu nur
+Wartungsprotokoll-Routen und optionale Felder). Live geprüft (Drucker
+IDLE): alle Status-, AMS-, Queue-, Archiv-, Smart-Plug- und
+Filamentfelder, `print/objects`, Snapshot (JPEG), Thumbnail (PNG), Cover
+mit Kamera-Token weiter 401; HMS-Skala und Materialableitung im Frontend
+unverändert. Angepasst: Der MQTT-Status trägt jetzt das komplette AMS
+und ist von ~0,7 auf 2,8 KB gewachsen. MQTT-Puffer deshalb auf 8 KB
+(vorher 4 KB, mit zweitem AMS oder ein paar HMS-Fehlern drohte stilles
+Verwerfen), und der Payload wird nur noch gefiltert eingelesen. Offen:
+Cover nur bei laufendem Druck abrufbar; `hms_errors` per MQTT war leer,
+Aufbau der Einträge also nicht live gesehen**
 
 Dieselbe Versionsnummer steht ein zweites Mal im Code, als
 `BB_TESTED_VERSION` in `src/bambuddy_version.h`. Das Display fragt die
@@ -77,7 +78,54 @@ Die interaktive Fassung liegt unter `{BASE_URL}/docs`. Die lokale Kopie in
 `bambuddy-docs/api/api-docs.json` ist der Stand, gegen den dieser Code
 entwickelt wurde — sie wird mit diesem Schritt aktualisiert.
 
-**3. Endpunkte, Parameter und Felder prüfen.**
+**3. Release Notes lesen — auf der Instanz und auf GitHub.**
+
+Ein Schemavergleich findet nur, was sich im Schema zeigt. Bedeutungs- und
+Verhaltensänderungen stehen ausschließlich in den Release Notes: die neue
+HMS-Skala in 1.2.5.7, die Bildrouten ohne Kamera-Token, der in 1.3.2 auf das
+Vierfache gewachsene MQTT-Payload. Deshalb beide Quellen lesen:
+
+- `release_notes` aus `GET /updates/check` (Schritt 1) — die Notes der
+  laufenden Fassung.
+- **<https://github.com/maziggy/bambuddy/releases>** — dort stehen auch die
+  Versionen dazwischen, falls die Instanz mehrere übersprungen hat, und die
+  täglichen Vorabversionen (`…-daily.JJJJMMTT`). `gh` ist hier nicht
+  installiert; die Liste kommt auch ohne Anmeldung:
+
+  ```bash
+  curl -s 'https://api.github.com/repos/maziggy/bambuddy/releases?per_page=10'
+  ```
+
+  Jeder Eintrag hat `tag_name`, `published_at`, `prerelease` und den Text in
+  `body`.
+
+**Alle Releases seit der zuletzt geprüften Fassung** (Kopf dieser Datei) bis
+einschließlich `current_version` lesen, nicht nur die neueste. Je Release
+zuerst „Before you update“ und den Satz zu API-Änderungen („There are no API
+changes“, „no breaking API changes“ usw.) lesen, dann die Einträge unter
+New/Changed/Fixes nach allem durchsuchen, was das Display berührt:
+
+- genannte Endpunkte oder Methoden (`` `POST /…` ``), „API“, „removed“,
+  „renamed“, „deprecated“, „breaking“,
+- Felder und Begriffe, die das Display auswertet: Status, `state`,
+  `remaining_time`, `layer_num`, HMS/`severity`, AMS/Slot/Tray, Queue,
+  Archiv/Läufe, Smart Plug/Auto-Off, Cover/Thumbnail/Snapshot/Token,
+  API-Key-Rechte, `print/objects`,
+- **MQTT**, besonders `bambuddy/printers/{serial}/status`: neue Felder lassen
+  den Payload wachsen (siehe Abschnitt zu MQTT unten).
+
+Jeden Treffer gegen den Code halten und in der Zusammenfassung sagen, ob er
+das Display betrifft. Auch Verhaltensänderungen auf dem Server zählen, die
+das Display nachbildet oder umgeht. Beispiel: Bambuddys Auto-Off wartet ab
+1.3.3 auf eine laufende AMS-Trocknung. Das Display schaltet die Steckdose
+aber selbst und bekommt diese Schonung nicht mit.
+
+**Vorabversionen nur als Vorwarnung lesen, nie dagegen anpassen.** Sie
+laufen nicht auf der Instanz (siehe Schritt 1). Was dort an kommenden
+Änderungen steht, in der Zusammenfassung erwähnen, damit es beim nächsten
+Durchlauf nicht überrascht.
+
+**4. Endpunkte, Parameter und Felder prüfen.**
 Es genügt nicht, dass ein Pfad noch existiert — er muss sich **genauso
 benutzen lassen wie bisher**. Deshalb alle drei Ebenen abgleichen:
 
@@ -104,12 +152,12 @@ warum. Deshalb Feld für Feld gegen das Schema prüfen, nicht nur den Pfad.
 statt Minuten), fällt das in keinem Schema auf — bei verdächtigen Werten
 gegen die Anzeige des Druckers gegenprüfen.
 
-**4. Abweichungen im Code nachziehen.**
+**5. Abweichungen im Code nachziehen.**
 Endpunkte, Parameter und Feldnamen anpassen. Bei entfernten Endpunkten nach
 dem vorgesehenen Ersatz suchen: Bambuddy liefert ihn oft in der
 Fehlerantwort mit (siehe unten).
 
-**5. Kopf dieser Datei nachführen — immer, auch wenn nichts zu tun war.**
+**6. Kopf dieser Datei nachführen — immer, auch wenn nichts zu tun war.**
 
 ```markdown
 **Getestet gegen Bambuddy-Version: v1.2.5.2**
@@ -263,14 +311,16 @@ hier nachsehen:
   fragen. Die Dateinamen tragen einen Hash und ändern sich mit jeder
   Version.
 - **Die Release Notes stehen im Feld `release_notes` von `GET
-  /updates/check`.** Sie sind die einzige Quelle für Bedeutungsänderungen
-  wie die HMS-Skala, und jede Version hat dort einen Abschnitt „Before you
-  update“ mit den API-Änderungen. Den bei jedem Durchlauf lesen.
+  /updates/check`** und, mit allen Zwischen- und Vorabversionen, unter
+  <https://github.com/maziggy/bambuddy/releases> (Schritt 3). Sie sind die
+  einzige Quelle für Bedeutungsänderungen wie die HMS-Skala, und jede
+  Version hat dort einen Abschnitt „Before you update“ mit den
+  API-Änderungen. Bei jedem Durchlauf lesen.
 - **`state` ist ein freier String** vom Drucker (IDLE, RUNNING, PAUSE,
   FINISH, FAILED, PREPARE), kein Enum der API. Unbekannte Werte müssen
   durchgereicht statt verschluckt werden.
 
-## Genutzte Endpunkte (Stand v1.3.1)
+## Genutzte Endpunkte (Stand v1.3.2)
 
 | Endpunkt | Datei |
 |---|---|
@@ -294,6 +344,19 @@ MQTT liest denselben Status über das Topic aus den Einstellungen
 (`bambuddy/printers/{serial}/status`) — dieselben Feldnamen wie die
 HTTP-Antwort, nur `printer_name` statt `name`. Ausgewertet wird beides von
 `bambuddy_status_from_json()` in `bambuddy_status_parse.h`.
+
+**Der MQTT-Payload wächst mit den Versionen, und zu groß heißt still
+verworfen.** Seit 1.3.2 trägt er zusätzlich `ams` (komplett, mit
+Trocknerwerten, ~1,6 KB je Einheit), `vt_tray`, `hms_errors`,
+`door_open` und `active_extruder`: gemessen 2,8 KB mit einem AMS, vorher
+~0,7 KB. PubSubClient verwirft eine Nachricht über `MQTT_BUFFER`
+(`bambuddy_mqtt.cpp`, jetzt 8 KB) ohne Fehler und ohne Logzeile, und das
+Display bleibt auf dem letzten Stand stehen. Deshalb bei jedem Durchlauf
+eine echte Nachricht mitlesen und die Größe gegen den Puffer halten:
+`mosquitto_sub -h … -u … -P … -t '<Topic>' -C 1 | wc -c` (Zugangsdaten
+in `include/secrets.h`). AMS aus MQTT wird weiterhin verworfen und nur
+per HTTP geladen. `on_message()` liest den Payload mit Filter ein — wertet
+der Parser ein neues Feld aus, muss es dort mit in den Filter.
 
 ---
 

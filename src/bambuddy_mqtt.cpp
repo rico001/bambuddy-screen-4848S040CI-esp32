@@ -12,9 +12,22 @@
 #include "bambuddy_config.h"
 #include "bambuddy_status_parse.h"
 
-// Der Status-Payload ist knapp 1 KB. PubSubClient verwirft zu grosse
-// Nachrichten stillschweigend — deshalb reichlich Puffer.
-static constexpr uint16_t MQTT_BUFFER = 4096;
+// Wie gross darf eine Statusnachricht werden?
+//
+// PubSubClient verwirft zu grosse Nachrichten stillschweigend: kein Fehler,
+// keine Logzeile — das Display bleibt einfach auf dem letzten Stand stehen.
+//
+// Bis Bambuddy 1.3.1 war der Payload knapp 1 KB. Seit 1.3.2 traegt er
+// zusaetzlich das komplette AMS (mit Trocknerwerten, je Einheit rund
+// 1,6 KB), die externe Spule und die HMS-Fehler samt Klartext. Mit einem
+// AMS sind es gemessen 2,8 KB; mit einer zweiten Einheit oder ein paar
+// anstehenden Fehlern waeren 4 KB ueberschritten — und die Anzeige froere
+// genau dann ein, wenn am Drucker etwas nicht stimmt.
+//
+// 8 KB reichen fuer vier AMS-Einheiten. Nebenbei landet ein Puffer ueber
+// 4 KB im PSRAM statt im internen RAM (CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL
+// = 4096), um den sich WLAN und Oberflaeche streiten.
+static constexpr uint16_t MQTT_BUFFER = 8192;
 // KeepAlive muss laenger sein als ein Kamera-Abruf den Task blockiert (~10 s),
 // sonst fliegt die Verbindung waehrend des Snapshots raus.
 static constexpr uint16_t KEEPALIVE_S = 30;
@@ -57,8 +70,35 @@ static const char *state_text(int state)
 
 static void on_message(char *topic, uint8_t *payload, unsigned int len)
 {
+    // Nur auslesen, was bambuddy_status_from_json() auch auswertet. Seit
+    // Bambuddy 1.3.2 traegt der Payload das komplette AMS, das hier ohnehin
+    // verworfen wird (siehe unten) — ohne Filter legte ArduinoJson es bei
+    // jeder Nachricht trotzdem vollstaendig im Heap an.
+    //
+    // Wertet der Parser ein neues Feld aus, muss es auch hier dazu, sonst
+    // kommt es ueber MQTT stillschweigend als Null an.
+    JsonDocument filter;
+    filter["connected"] = true;
+    filter["name"] = true;
+    filter["printer_name"] = true;
+    filter["state"] = true;
+    filter["subtask_name"] = true;
+    filter["progress"] = true;
+    filter["remaining_time"] = true;
+    filter["layer_num"] = true;
+    filter["total_layers"] = true;
+    filter["temperatures"] = true;
+    filter["chamber_light"] = true;
+    filter["awaiting_plate_clear"] = true;
+    filter["speed_level"] = true;
+    JsonObject hms_filter = filter["hms_errors"].add<JsonObject>();
+    hms_filter["full_code"] = true;
+    hms_filter["code"] = true;
+    hms_filter["severity"] = true;
+
     JsonDocument doc;
-    const DeserializationError err = deserializeJson(doc, payload, len);
+    const DeserializationError err =
+        deserializeJson(doc, payload, len, DeserializationOption::Filter(filter));
     if (err) {
         Serial.printf("[MQTT] Payload nicht lesbar: %s\n", err.c_str());
         bambuddy_api_report_link(BB_LINK_NO_SERVER, "MQTT-Nachricht nicht lesbar");
